@@ -22,6 +22,7 @@ def _template_message(user: dict, target_person: dict, target_company: str, cont
     degree = target_person.get("degree", 1)
     is_recruiter = target_person.get("is_recruiter", False)
     bridge = context.get("bridge_person")
+    bridge2 = context.get("bridge2_person")
     sender = user.get("name", "")
 
     if is_recruiter:
@@ -38,6 +39,17 @@ def _template_message(user: dict, target_person: dict, target_company: str, cont
         return (
             f"Hi {name},\n\n"
             f"I noticed we're connected through {bridge_name}, "
+            f"and I've been really impressed by the {title} work at {target_company}. "
+            f"I'd love to learn more about your experience there. "
+            f"Would you be open to a quick coffee chat?\n\n"
+            f"Best,\n{sender}"
+        )
+    elif degree == 3 and bridge and bridge2:
+        bridge_name = bridge.get("name", "our mutual connection").split()[0]
+        bridge2_name = bridge2.get("name", "their connection").split()[0]
+        return (
+            f"Hi {name},\n\n"
+            f"I noticed we share connections through {bridge_name} and {bridge2_name}, "
             f"and I've been really impressed by the {title} work at {target_company}. "
             f"I'd love to learn more about your experience there. "
             f"Would you be open to a quick coffee chat?\n\n"
@@ -66,6 +78,7 @@ def generate_outreach_message(
         return _template_message(user, target_person, target_company, context)
 
     bridge = context.get("bridge_person")
+    bridge2 = context.get("bridge2_person")
     degree = target_person.get("degree", 1)
     title = target_person.get("title", "")
     is_recruiter = target_person.get("is_recruiter", False)
@@ -76,7 +89,9 @@ def generate_outreach_message(
     if title:
         parts.append(f"who is a {title}")
     parts.append(f"at {target_company}.")
-    if bridge:
+    if bridge and bridge2:
+        parts.append(f"Mention mutual connections {bridge.get('name','')} and {bridge2.get('name','')}.")
+    elif bridge:
         parts.append(f"Mention mutual connection {bridge.get('name','')}.")
     if is_recruiter:
         parts.append("They are a recruiter - ask about open roles.")

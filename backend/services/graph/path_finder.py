@@ -24,7 +24,15 @@ def find_paths_to_company(user_id: str, target_company: str) -> list[dict]:
         RETURN p, c, bridge, 2 as degree
     """, user_id=user_id, company=target_company)
 
-    return {"first_degree": first_degree, "second_degree": second_degree}
+    # 3rd degree connections
+    third_degree = db.run("""
+        MATCH (u:Person {id: $user_id})-[:KNOWS]->(bridge1:Person)-[:KNOWS]->(bridge2:Person)-[:KNOWS]->(p:Person)-[:WORKS_AT]->(c:Company)
+        WHERE toLower(c.name) CONTAINS toLower($company)
+        AND NOT (u)-[:KNOWS*1..2]-(p)
+        RETURN p, c, bridge1, bridge2, 3 as degree
+    """, user_id=user_id, company=target_company)
+
+    return {"first_degree": first_degree, "second_degree": second_degree, "third_degree": third_degree}
 
 def get_graph_for_company(user_id: str, target_company: str) -> dict:
     """Returns nodes + edges for the graph visualizer."""

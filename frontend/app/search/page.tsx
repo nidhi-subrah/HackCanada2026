@@ -19,6 +19,7 @@ interface Contact {
   relevance_score: number
   is_recruiter?: boolean
   bridge?: { name: string; title?: string }
+  bridge2?: { name: string; title?: string }
 }
 
 interface SearchResults {
@@ -26,6 +27,7 @@ interface SearchResults {
   total_connections: number
   first_degree_count: number
   second_degree_count: number
+  third_degree_count: number
   recruiters: Contact[]
   top_connections: Contact[]
 }
@@ -76,6 +78,7 @@ export default function SearchPage() {
         target_person: contact,
         target_company: query,
         bridge_person: contact.bridge || null,
+        bridge2_person: contact.bridge2 || null,
       })
       setAiMessage(res.data.message)
     } catch (e) {
@@ -126,11 +129,12 @@ export default function SearchPage() {
           {results && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-6">
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {[
                     { label: "Total Connections", value: results.total_connections },
                     { label: "Direct (1st°)", value: results.first_degree_count },
                     { label: "Via Referral (2nd°)", value: results.second_degree_count },
+                    { label: "Extended (3rd°)", value: results.third_degree_count },
                   ].map(s => (
                     <div key={s.label} className="bg-dark-surface rounded-2xl p-4 text-center">
                       <div className="text-2xl font-bold text-brand-400">{s.value}</div>
@@ -153,7 +157,7 @@ export default function SearchPage() {
                           </div>
                           <p className="text-sm font-medium text-white">You</p>
                         </div>
-                        {bestContact.degree === 2 && bestContact.bridge && (
+                        {bestContact.degree >= 2 && bestContact.bridge && (
                           <>
                             <div className="flex-1 max-w-[80px] flex flex-col items-center">
                               <div className="h-0.5 w-full bg-gradient-to-r from-brand-500 to-purple-500 rounded-full" />
@@ -164,12 +168,27 @@ export default function SearchPage() {
                                 <User className="w-6 h-6 text-purple-400" />
                               </div>
                               <p className="text-sm font-medium text-white">{bestContact.bridge.name.split(" ")[0]}</p>
-                              <p className="text-xs text-purple-400">Bridge</p>
+                              <p className="text-xs text-purple-400">Bridge 1</p>
+                            </div>
+                          </>
+                        )}
+                        {bestContact.degree >= 3 && bestContact.bridge2 && (
+                          <>
+                            <div className="flex-1 max-w-[80px] flex flex-col items-center">
+                              <div className="h-0.5 w-full bg-gradient-to-r from-purple-500 to-blue-500 rounded-full" />
+                              <span className="text-[10px] text-zinc-500 mt-2">knows</span>
+                            </div>
+                            <div className="text-center">
+                              <div className="w-14 h-14 rounded-full bg-blue-500/20 border-2 border-blue-500 flex items-center justify-center mx-auto mb-3">
+                                <User className="w-6 h-6 text-blue-400" />
+                              </div>
+                              <p className="text-sm font-medium text-white">{bestContact.bridge2.name.split(" ")[0]}</p>
+                              <p className="text-xs text-blue-400">Bridge 2</p>
                             </div>
                           </>
                         )}
                         <div className="flex-1 max-w-[80px] flex flex-col items-center">
-                          <div className="h-0.5 w-full bg-gradient-to-r from-purple-500 to-accent-cyan rounded-full" />
+                          <div className={`h-0.5 w-full bg-gradient-to-r ${bestContact.degree >= 3 ? 'from-blue-500' : bestContact.degree === 2 ? 'from-purple-500' : 'from-brand-500'} to-accent-emerald rounded-full`} />
                           <span className="text-[10px] text-zinc-500 mt-2">{bestContact.degree === 1 ? "1st degree" : "referral"}</span>
                         </div>
                         <div className="text-center">
@@ -193,7 +212,7 @@ export default function SearchPage() {
                       </div>
                       <div className="mt-6 pt-6 border-t border-dark-glassBorder">
                         <p className="text-sm text-zinc-400 text-center">
-                          <span className="text-accent-emerald font-medium">{Math.round(bestContact.relevance_score * 100)}% match</span> — {bestContact.is_recruiter ? "Recruiter at the company" : `${bestContact.degree === 1 ? "Direct" : "2nd-degree"} connection at ${results.company}`}
+                          <span className="text-accent-emerald font-medium">{Math.round(bestContact.relevance_score * 100)}% match</span> — {bestContact.is_recruiter ? "Recruiter at the company" : `${bestContact.degree === 1 ? "Direct" : bestContact.degree === 2 ? "2nd-degree" : "3rd-degree"} connection at ${results.company}`}
                         </p>
                       </div>
                     </div>
@@ -323,11 +342,16 @@ function ContactRow({ contact, onDraftMessage }: { contact: Contact; onDraftMess
               <span className={`text-xs px-2 py-0.5 rounded-full ${matchPercent >= 70 ? "bg-accent-emerald/10 text-accent-emerald border border-accent-emerald/20" : matchPercent >= 40 ? "bg-brand-500/10 text-brand-400 border border-brand-500/20" : "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20"}`}>
                 {matchPercent}% match
               </span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-dark-elevated text-zinc-500 border border-dark-glassBorder">{contact.degree === 1 ? "1st" : "2nd"}°</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-dark-elevated text-zinc-500 border border-dark-glassBorder">{contact.degree === 1 ? "1st" : contact.degree === 2 ? "2nd" : "3rd"}°</span>
               {contact.is_recruiter && <span className="text-xs px-2 py-0.5 rounded-full bg-accent-amber/10 text-accent-amber border border-accent-amber/20">Recruiter</span>}
             </div>
             <p className="text-sm text-zinc-400 mb-1">{contact.title || "Unknown role"}</p>
-            {contact.degree === 2 && contact.bridge && <p className="text-xs text-zinc-600">Via {contact.bridge.name}</p>}
+            {contact.degree >= 2 && contact.bridge && (
+              <p className="text-xs text-zinc-600">
+                Via {contact.bridge.name} 
+                {contact.degree >= 3 && contact.bridge2 ? ` → ${contact.bridge2.name}` : ''}
+              </p>
+            )}
           </div>
         </div>
         <button onClick={onDraftMessage} className="btn-primary text-sm px-4 py-2 flex-shrink-0">

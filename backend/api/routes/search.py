@@ -34,6 +34,13 @@ def search_company(
         p["bridge"] = dict(r["bridge"])
         candidates.append(p)
 
+    for r in paths["third_degree"]:
+        p = dict(r["p"])
+        p["degree"] = 3
+        p["bridge"] = dict(r["bridge1"])
+        p["bridge2"] = dict(r["bridge2"])
+        candidates.append(p)
+
     ranked = rank_connections(user_profile, candidates, company)
 
     return {
@@ -41,6 +48,7 @@ def search_company(
         "total_connections": len(ranked),
         "first_degree_count": len(paths["first_degree"]),
         "second_degree_count": len(paths["second_degree"]),
+        "third_degree_count": len(paths["third_degree"]),
         "recruiters": [c for c in ranked if c.get("is_recruiter")],
         "top_connections": ranked[:10],
     }

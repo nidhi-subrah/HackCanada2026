@@ -9,6 +9,7 @@ class MessageRequest(BaseModel):
     target_person: dict
     target_company: str
     bridge_person: dict | None = None
+    bridge2_person: dict | None = None
 
 @router.post("/generate")
 async def generate_message(req: MessageRequest):
@@ -17,7 +18,7 @@ async def generate_message(req: MessageRequest):
             user=req.user,
             target_person=req.target_person,
             target_company=req.target_company,
-            context={"bridge_person": req.bridge_person}
+            context={"bridge_person": req.bridge_person, "bridge2_person": req.bridge2_person}
         )
         return {"message": message}
     except Exception as e:

@@ -16,13 +16,13 @@ export default function UploadPage() {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle")
   const [result, setResult] = useState<any>(null)
   const [dragActive, setDragActive] = useState(false)
+  const [hasExistingGraph, setHasExistingGraph] = useState(false)
 
-  // Redirect users to dashboard if they already have graph data
   useEffect(() => {
     if (localStorage.getItem("user_id")) {
-      router.replace("/dashboard")
+      setHasExistingGraph(true)
     }
-  }, [router])
+  }, [])
 
   const handleUpload = async () => {
     if (!file || !userName) return
@@ -123,7 +123,20 @@ export default function UploadPage() {
             </div>
           </div>
         ) : (
-          <div className="glass-card p-8 space-y-6">
+          <div className="glass-card p-8 space-y-6 animate-slide-up">
+            {hasExistingGraph && (
+              <div className="p-4 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-300 text-sm flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold mb-1">You already have a network graph</p>
+                  <p className="text-brand-300/80 leading-relaxed">
+                    Uploading a new CSV here will replace your primary graph. If you want to add a friend&apos;s 
+                    connections without losing yours, use the <strong>Connections</strong> panel (person with + icon) in the sidebar instead.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-zinc-300 mb-2">
                 Your Name

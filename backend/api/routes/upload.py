@@ -28,10 +28,18 @@ async def upload_csv(
 
     # Link auth email to the Person node so we can restore sessions later
     if auth_email:
-        db.run_write("""
-            MATCH (p:Person {id: $user_id})
-            SET p.auth_email = $auth_email
-        """, user_id=user_id, auth_email=auth_email)
+        if not is_additional:
+            db.run_write("""
+                MATCH (p:Person {id: $user_id})
+                SET p.auth_email = $auth_email
+            """, user_id=user_id, auth_email=auth_email)
+        else:
+            # We must link the main authenticated user to this new bridge proxy
+            db.run_write("""
+                MATCH (u:Person {auth_email: $auth_email, is_user: true})
+                MATCH (bridge:Person {id: $user_id})
+                MERGE (u)-[:KNOWS {source_id: 'primary'}]->(bridge)
+            """, auth_email=auth_email, user_id=user_id)
 
     # Store source metadata so we can list/delete later
     if source_id:
