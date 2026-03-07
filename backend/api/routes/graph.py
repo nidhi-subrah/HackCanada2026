@@ -261,9 +261,8 @@ def get_graph_overview(current_user: dict = Depends(get_current_user)):
                 "label": "KNOWS",
             })
 
-        company = dict(r["c"]) if r.get("c") else None
-        if company:
-
+        # Add companies for this person from the lookup map
+        for company in companies_by_person.get(pid, []):
             cname = company.get("name", "")
             if not cname:
                 continue
