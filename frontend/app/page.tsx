@@ -1,41 +1,40 @@
+"use client"
 import Link from "next/link"
 import { ArrowRight, Waypoints, Network, TrendingUp, Users, Zap } from "lucide-react"
+import dynamic from "next/dynamic"
+import { useEffect, useState } from "react"
 
-
-
+const DemoGraph3D = dynamic(() => import("@/components/graph/DemoGraph3D"), { 
+  ssr: false,
+  loading: () => <div className="w-full h-full bg-[#0a0a12]" />
+})
 
 
 export default function Home() {
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+    const updateDimensions = () => {
+      setDimensions({ width: window.innerWidth, height: window.innerHeight })
+    }
+    updateDimensions()
+    window.addEventListener("resize", updateDimensions)
+    return () => window.removeEventListener("resize", updateDimensions)
+  }, [])
+
   return (
     <div className="min-h-screen bg-[#0a0a12] relative overflow-hidden">
-      {/* Cosmic background */}
-      <div className="fixed inset-0 -z-10">
-        {/* Stars/particles effect */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_0%,_#0a0a12_70%)]" />
-       
-        {/* Main glow ring */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px]">
-          <div className="absolute inset-0 rounded-full bg-gradient-to-t from-brand-600/40 via-purple-500/20 to-transparent blur-[80px] animate-pulse-slow" />
-          <div className="absolute inset-12 rounded-full border border-purple-500/20 animate-[spin_60s_linear_infinite]" />
-          <div className="absolute inset-24 rounded-full border border-brand-500/10 animate-[spin_45s_linear_infinite_reverse]" />
-        </div>
-
-
-
-
-        {/* Particle dots */}
-        {[...Array(50)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-0.5 h-0.5 bg-white/30 rounded-full animate-pulse"
-            style={{
-              top: `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 3}s`,
-              animationDuration: `${2 + Math.random() * 3}s`,
-            }}
-          />
-        ))}
+      {/* 3D Graph Background */}
+      <div className="fixed inset-0 z-0">
+        {mounted && dimensions.width > 0 && (
+          <DemoGraph3D width={dimensions.width} height={dimensions.height} />
+        )}
+        
+        {/* Gradient overlays for readability */}
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a12]/60 via-transparent to-[#0a0a12]/80 pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_20%,_#0a0a12_85%)] pointer-events-none" />
       </div>
 
 

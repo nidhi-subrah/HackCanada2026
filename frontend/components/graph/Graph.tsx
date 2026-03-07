@@ -63,17 +63,160 @@ const NODE_SIZES_3D: Record<string, number> = {
 }
 
 const logoCache = new Map<string, HTMLImageElement | null>()
+const logoLoadCallbacks = new Map<string, (() => void)[]>()
 
-function loadLogo(url: string): HTMLImageElement | null {
+function loadLogo(url: string, onLoad?: () => void): HTMLImageElement | null {
   if (!url) return null
-  if (logoCache.has(url)) return logoCache.get(url)!
-  logoCache.set(url, null)
-  const img = new Image()
-  img.crossOrigin = "anonymous"
-  img.onload = () => logoCache.set(url, img)
-  img.onerror = () => logoCache.set(url, null)
-  img.src = url
-  return null
+  
+  if (logoCache.has(url)) {
+    const cached = logoCache.get(url)
+    if (cached && onLoad) onLoad()
+    return cached!
+  }
+  
+  if (onLoad) {
+    const callbacks = logoLoadCallbacks.get(url) || []
+    callbacks.push(onLoad)
+    logoLoadCallbacks.set(url, callbacks)
+  }
+  
+  if (!logoCache.has(url)) {
+    logoCache.set(url, null)
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => {
+      logoCache.set(url, img)
+      const callbacks = logoLoadCallbacks.get(url) || []
+      callbacks.forEach(cb => cb())
+      logoLoadCallbacks.delete(url)
+    }
+    img.onerror = () => {
+      logoCache.set(url, null)
+      logoLoadCallbacks.delete(url)
+    }
+    img.src = url
+  }
+  
+  return logoCache.get(url) || null
+}
+
+function createPersonSprite(
+  initials: string,
+  name: string,
+  bgColor: string,
+  isRecruiter: boolean = false,
+  isUser: boolean = false
+): THREE.Sprite {
+  const canvas = document.createElement("canvas")
+  const size = 256
+  canvas.width = size * 2
+  canvas.height = size * 2
+  const ctx = canvas.getContext("2d")!
+  
+  const centerX = size
+  const centerY = size * 0.65
+  const radius = size * 0.4
+  
+  if (isUser) {
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, radius + 20, 0, Math.PI * 2)
+    ctx.fillStyle = "rgba(139, 92, 246, 0.35)"
+    ctx.fill()
+  }
+  
+  if (isRecruiter) {
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, radius + 10, 0, Math.PI * 2)
+    ctx.strokeStyle = "#10B981"
+    ctx.lineWidth = 8
+    ctx.stroke()
+  }
+  
+  ctx.beginPath()
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
+  ctx.fillStyle = bgColor
+  ctx.fill()
+  
+  ctx.font = `bold ${size * 0.28}px Inter, Arial, sans-serif`
+  ctx.textAlign = "center"
+  ctx.textBaseline = "middle"
+  ctx.fillStyle = "#FFFFFF"
+  ctx.fillText(initials, centerX, centerY)
+  
+  ctx.font = `bold ${size * 0.11}px Inter, Arial, sans-serif`
+  ctx.textAlign = "center"
+  ctx.textBaseline = "top"
+  ctx.fillStyle = "#E4E4E7"
+  const displayName = name.length > 18 ? name.substring(0, 17) + "…" : name
+  ctx.fillText(displayName, centerX, centerY + radius + 20)
+  
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.needsUpdate = true
+  
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+  const sprite = new THREE.Sprite(material)
+  sprite.scale.set(24, 24, 1)
+  
+  return sprite
+}
+
+function createCompanySprite(
+  name: string,
+  logoImg: HTMLImageElement | null,
+  fallbackInitials: string
+): THREE.Sprite {
+  const canvas = document.createElement("canvas")
+  const size = 256
+  canvas.width = size * 2
+  canvas.height = size * 2
+  const ctx = canvas.getContext("2d")!
+  
+  const centerX = size
+  const centerY = size * 0.65
+  const radius = size * 0.4
+  
+  ctx.beginPath()
+  ctx.arc(centerX, centerY, radius + 6, 0, Math.PI * 2)
+  ctx.strokeStyle = "#F59E0B"
+  ctx.lineWidth = 8
+  ctx.stroke()
+  
+  ctx.beginPath()
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
+  ctx.fillStyle = "#1a1a2e"
+  ctx.fill()
+  
+  if (logoImg) {
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, radius - 8, 0, Math.PI * 2)
+    ctx.clip()
+    const imgSize = (radius - 8) * 2
+    ctx.drawImage(logoImg, centerX - imgSize / 2, centerY - imgSize / 2, imgSize, imgSize)
+    ctx.restore()
+  } else {
+    ctx.font = `bold ${size * 0.25}px Inter, Arial, sans-serif`
+    ctx.textAlign = "center"
+    ctx.textBaseline = "middle"
+    ctx.fillStyle = "#F59E0B"
+    ctx.fillText(fallbackInitials, centerX, centerY)
+  }
+  
+  ctx.font = `bold ${size * 0.12}px Inter, Arial, sans-serif`
+  ctx.textAlign = "center"
+  ctx.textBaseline = "top"
+  ctx.fillStyle = "#FCD34D"
+  const displayName = name.length > 18 ? name.substring(0, 17) + "…" : name
+  ctx.fillText(displayName, centerX, centerY + radius + 20)
+  
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.needsUpdate = true
+  
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+  const sprite = new THREE.Sprite(material)
+  sprite.scale.set(24, 24, 1)
+  
+  return sprite
 }
 
 export default function Graph({ width, height, initialZoom, default3D = false }: Props) {
@@ -305,45 +448,24 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
   }, [])
 
   const create3DNode = useCallback((node: any) => {
-    const size = NODE_SIZES_3D[node.type as string] || 4
     const color = NODE_COLORS[node.type as string] || "#888"
     
-    const geometry = node.type === "company" 
-      ? new THREE.BoxGeometry(size, size, size)
-      : new THREE.SphereGeometry(size, 16, 16)
-    
-    const material = new THREE.MeshLambertMaterial({
-      color: color,
-      transparent: true,
-      opacity: 0.9,
-    })
-    
-    const mesh = new THREE.Mesh(geometry, material)
-    
-    if (node.type === "user") {
-      const glowGeometry = new THREE.SphereGeometry(size * 1.5, 16, 16)
-      const glowMaterial = new THREE.MeshBasicMaterial({
-        color: "#8B5CF6",
-        transparent: true,
-        opacity: 0.2,
-      })
-      const glow = new THREE.Mesh(glowGeometry, glowMaterial)
-      mesh.add(glow)
+    if (node.type === "company") {
+      const logoImg = node.logo ? loadLogo(node.logo, () => {
+        if (fgRef.current && typeof fgRef.current.refresh === "function") fgRef.current.refresh()
+      }) : null
+      const fallback = node.initials || node.name?.substring(0, 2).toUpperCase() || "CO"
+      return createCompanySprite(node.name || "", logoImg, fallback)
+    } else {
+      const initials = node.initials || node.name?.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase() || "?"
+      return createPersonSprite(
+        initials,
+        node.name || "",
+        color,
+        node.is_recruiter,
+        node.type === "user"
+      )
     }
-    
-    if (node.is_recruiter) {
-      const ringGeometry = new THREE.RingGeometry(size * 1.2, size * 1.4, 32)
-      const ringMaterial = new THREE.MeshBasicMaterial({
-        color: "#10B981",
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.8,
-      })
-      const ring = new THREE.Mesh(ringGeometry, ringMaterial)
-      mesh.add(ring)
-    }
-    
-    return mesh
   }, [])
 
   if (loading) {
