@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import Link from "next/link"
 import axios from "axios"
@@ -17,15 +17,29 @@ export default function UploadPage() {
   const [result, setResult] = useState<any>(null)
   const [dragActive, setDragActive] = useState(false)
 
+  // Redirect users to dashboard if they already have graph data
+  useEffect(() => {
+    if (localStorage.getItem("user_id")) {
+      router.replace("/dashboard")
+    }
+  }, [router])
+
   const handleUpload = async () => {
     if (!file || !userName) return
     setStatus("loading")
     const formData = new FormData()
     formData.append("file", file)
 
+    // Include auth_email so the backend can link this upload to the user's auth account
+    const authEmail = user?.email || ""
+    let uploadUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/upload/csv?user_name=${encodeURIComponent(userName)}`
+    if (authEmail) {
+      uploadUrl += `&auth_email=${encodeURIComponent(authEmail)}`
+    }
+
     try {
       const res = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/upload/csv?user_name=${encodeURIComponent(userName)}`,
+        uploadUrl,
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       )
@@ -119,7 +133,7 @@ export default function UploadPage() {
                 placeholder="As it appears on LinkedIn"
                 value={userName}
                 onChange={e => setUserName(e.target.value)}
-                className="input-field"
+                className="input-field w-full px-4 py-3 bg-dark-bg/50 border border-dark-glassBorder rounded-xl text-white outline-none focus:border-brand-500 transition-colors"
               />
             </div>
 

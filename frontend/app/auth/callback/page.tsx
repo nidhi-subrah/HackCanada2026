@@ -26,24 +26,29 @@ function CallbackHandler() {
       return
     }
 
-    try {
-      // Decode URL-safe base64 user info
-      const userJson = atob(userB64.replace(/-/g, "+").replace(/_/g, "/"))
-      const user = JSON.parse(userJson)
+    const processAuth = async () => {
+      try {
+        // Decode URL-safe base64 user info
+        const userJson = atob(userB64.replace(/-/g, "+").replace(/_/g, "/"))
+        const user = JSON.parse(userJson)
 
-      // Store auth data
-      login(token, user)
-      setStatus("success")
+        // Store auth data and await session restore
+        await login(token, user)
+        setStatus("success")
 
-      // Redirect after a brief moment
-      setTimeout(() => {
-        router.push("/upload")
-      }, 800)
-    } catch (err) {
-      console.error("Auth callback error:", err)
-      setStatus("error")
-      setErrorMsg("Failed to process authentication. Please try again.")
+        // Redirect based on whether they have existing graph data
+        setTimeout(() => {
+          const hasExistingGraph = localStorage.getItem("user_id")
+          router.push(hasExistingGraph ? "/dashboard" : "/upload")
+        }, 800)
+      } catch (err) {
+        console.error("Auth callback error:", err)
+        setStatus("error")
+        setErrorMsg("Failed to process authentication. Please try again.")
+      }
     }
+
+    processAuth()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

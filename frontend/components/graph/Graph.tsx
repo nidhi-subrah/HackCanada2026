@@ -1,5 +1,5 @@
 "use client"
-import React, { useEffect, useRef, useState, useCallback } from "react"
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import axios from "axios"
 import dynamic from "next/dynamic"
 
@@ -11,9 +11,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 type GraphNode = {
   id: string
   name: string
-  type: "user" | "person" | "company"
+  type: "user" | "person" | "company" | "source_owner"
   title?: string
   is_recruiter?: boolean
+  group?: string
   x?: number
   y?: number
 }
@@ -22,11 +23,19 @@ type GraphLink = {
   source: string | GraphNode
   target: string | GraphNode
   label: string
+  source_id?: string
+}
+
+type GroupInfo = {
+  id: string
+  name: string
+  color: string
 }
 
 type GraphData = {
   nodes: GraphNode[]
   links: GraphLink[]
+  groups?: GroupInfo[]
 }
 
 type Props = {
@@ -34,23 +43,47 @@ type Props = {
   height?: number
 }
 
-const NODE_COLORS: Record<string, string> = {
-  user: "#8B5CF6",
-  person: "#06B6D4",
-  company: "#F59E0B",
-}
-
 const NODE_SIZES: Record<string, number> = {
   user: 10,
   person: 5,
   company: 7,
+  source_owner: 8,
+}
+
+// Fallback colors if no group info
+const FALLBACK_COLORS: Record<string, string> = {
+  user: "#8B5CF6",
+  person: "#06B6D4",
+  company: "#F59E0B",
+  source_owner: "#34d399",
 }
 
 export default function Graph({ width, height }: Props) {
   const fgRef = useRef<any>(null)
-  const [data, setData] = useState<GraphData>({ nodes: [], links: [] })
+  const [data, setData] = useState<GraphData>({ nodes: [], links: [], groups: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Build a group -> color lookup from the groups metadata
+  const groupColorMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    if (data.groups) {
+      for (const g of data.groups) {
+        map[g.id] = g.color
+      }
+    }
+    return map
+  }, [data.groups])
+
+  const getNodeColor = useCallback((node: GraphNode) => {
+    if (node.type === "user") return "#8B5CF6"
+    if (node.type === "company") return "#F59E0B"
+    // Use group color for person / source_owner nodes
+    if (node.group && groupColorMap[node.group]) {
+      return groupColorMap[node.group]
+    }
+    return FALLBACK_COLORS[node.type] || "#888"
+  }, [groupColorMap])
 
   useEffect(() => {
     let mounted = true
@@ -80,6 +113,39 @@ export default function Graph({ width, height }: Props) {
     return () => { mounted = false }
   }, [])
 
+  // Apply clustering force: nudge nodes in the same group toward each other
+  useEffect(() => {
+    if (!fgRef.current || !data.groups || data.groups.length <= 1) return
+
+    const fg = fgRef.current
+    // Compute group centers and apply a gentle clustering force
+    const groupCenters: Record<string, { x: number, y: number }> = {}
+    const groups = data.groups || []
+    const angleStep = (2 * Math.PI) / Math.max(groups.length, 1)
+    const clusterRadius = 200
+
+    groups.forEach((g, i) => {
+      groupCenters[g.id] = {
+        x: Math.cos(angleStep * i) * clusterRadius,
+        y: Math.sin(angleStep * i) * clusterRadius,
+      }
+    })
+
+    fg.d3Force("cluster", (alpha: number) => {
+      const nodes = fg.graphData().nodes
+      for (const node of nodes) {
+        const center = groupCenters[(node as any).group]
+        if (center && node.x != null && node.y != null) {
+          const k = alpha * 0.3
+          node.vx = (node.vx || 0) + (center.x - node.x) * k
+          node.vy = (node.vy || 0) + (center.y - node.y) * k
+        }
+      }
+    })
+
+    fg.d3ReheatSimulation()
+  }, [data])
+
   const handleNodeClick = useCallback((node: any) => {
     if (fgRef.current && node.x !== undefined && node.y !== undefined) {
       fgRef.current.centerAt(node.x, node.y, 600)
@@ -89,13 +155,21 @@ export default function Graph({ width, height }: Props) {
 
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const r = NODE_SIZES[node.type] || 5
-    const color = NODE_COLORS[node.type] || "#888"
+    const color = getNodeColor(node)
 
     // Glow for user node
     if (node.type === "user") {
       ctx.beginPath()
       ctx.arc(node.x, node.y, r + 4, 0, 2 * Math.PI)
       ctx.fillStyle = "rgba(139, 92, 246, 0.25)"
+      ctx.fill()
+    }
+
+    // Glow ring for source owners
+    if (node.type === "source_owner") {
+      ctx.beginPath()
+      ctx.arc(node.x, node.y, r + 3, 0, 2 * Math.PI)
+      ctx.fillStyle = "rgba(52, 211, 153, 0.2)"
       ctx.fill()
     }
 
@@ -116,14 +190,14 @@ export default function Graph({ width, height }: Props) {
 
     // Label
     const fontSize = Math.max(10 / globalScale, 2)
-    if (globalScale > 0.6 || node.type === "user" || node.type === "company") {
-      ctx.font = `${node.type === "user" ? "bold " : ""}${fontSize}px Inter, sans-serif`
+    if (globalScale > 0.6 || node.type === "user" || node.type === "company" || node.type === "source_owner") {
+      ctx.font = `${(node.type === "user" || node.type === "source_owner") ? "bold " : ""}${fontSize}px Inter, sans-serif`
       ctx.textAlign = "center"
       ctx.textBaseline = "top"
       ctx.fillStyle = node.type === "company" ? "#FCD34D" : "#E4E4E7"
       ctx.fillText(node.name || "", node.x, node.y + r + 2)
     }
-  }, [])
+  }, [getNodeColor])
 
   const paintLink = useCallback((link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const src = link.source
@@ -188,7 +262,7 @@ export default function Graph({ width, height }: Props) {
       linkDirectionalArrowLength={4}
       linkDirectionalArrowRelPos={0.9}
       onNodeClick={handleNodeClick}
-      cooldownTicks={100}
+      cooldownTicks={150}
       d3AlphaDecay={0.02}
       d3VelocityDecay={0.3}
     />

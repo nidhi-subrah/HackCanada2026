@@ -60,6 +60,10 @@ export default function GraphPage() {
               <span className="text-xs text-zinc-400">Company</span>
             </div>
             <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-[#34d399]" />
+              <span className="text-xs text-zinc-400">Source Owner</span>
+            </div>
+            <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full border-2 border-[#10B981] bg-transparent" />
               <span className="text-xs text-zinc-400">Recruiter</span>
             </div>

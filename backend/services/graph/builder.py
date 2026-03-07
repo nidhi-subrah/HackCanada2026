@@ -6,6 +6,7 @@ CSV columns (LinkedIn export):
 """
 import pandas as pd
 import hashlib
+import uuid
 from db.neo4j_client import db
 
 def parse_csv(file_bytes: bytes) -> pd.DataFrame:
@@ -20,7 +21,10 @@ def make_id(name: str, email: str = "") -> str:
     raw = f"{name}{email}".lower().strip()
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
-def build_graph(df: pd.DataFrame, user: dict) -> dict:
+def generate_source_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+def build_graph(df: pd.DataFrame, user: dict, source_id: str | None = None) -> dict:
     """
     Nodes:
       (:Person {id, name, title, email, profile_url, connected_on, is_recruiter})
@@ -32,11 +36,20 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
     """
     stats = {"persons": 0, "companies": 0, "relationships": 0}
 
+    user_id = make_id(user["name"], user.get("email", ""))
+
     # Create the user node
     db.run_write("""
         MERGE (p:Person {id: $id})
         SET p.name = $name, p.title = $title, p.is_user = true
-    """, id=make_id(user["name"]), name=user["name"], title=user.get("title", ""))
+    """, id=user_id, name=user["name"], title=user.get("title", ""))
+
+    # If a source_id is provided, mark this person as a source owner
+    if source_id:
+        db.run_write("""
+            MERGE (p:Person {id: $id})
+            SET p.is_source_owner = true
+        """, id=user_id)
 
     recruiter_keywords = ["recruiter", "talent acquisition", "hiring", "hr", "people ops", "talent partner"]
 
@@ -69,11 +82,18 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
              is_recruiter=is_recruiter)
         stats["persons"] += 1
 
-        # Relationship: you → connection
-        db.run_write("""
-            MATCH (u:Person {id: $user_id}), (c:Person {id: $conn_id})
-            MERGE (u)-[:KNOWS]->(c)
-        """, user_id=make_id(user["name"]), conn_id=person_id)
+        # Relationship: you → connection (tagged with source_id if provided)
+        if source_id:
+            db.run_write("""
+                MATCH (u:Person {id: $user_id}), (c:Person {id: $conn_id})
+                MERGE (u)-[r:KNOWS]->(c)
+                SET r.source_id = $source_id
+            """, user_id=user_id, conn_id=person_id, source_id=source_id)
+        else:
+            db.run_write("""
+                MATCH (u:Person {id: $user_id}), (c:Person {id: $conn_id})
+                MERGE (u)-[:KNOWS]->(c)
+            """, user_id=user_id, conn_id=person_id)
         stats["relationships"] += 1
 
         if company:

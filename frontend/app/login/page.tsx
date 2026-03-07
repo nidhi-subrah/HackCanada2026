@@ -32,8 +32,11 @@ export default function LoginPage() {
       const res = await axios.post(`${apiUrl}${endpoint}`, payload)
       
       const { token, user } = res.data
-      login(token, user)
-      router.push("/upload")
+      await login(token, user)
+      // If session was restored (user has existing graph), go to dashboard
+      // Otherwise, they need to upload their CSV first
+      const hasExistingGraph = localStorage.getItem("user_id")
+      router.push(hasExistingGraph ? "/dashboard" : "/upload")
     } catch (err: any) {
       const rawError = err.response?.data?.detail || err.message || "An unexpected error occurred"
       
