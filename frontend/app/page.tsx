@@ -1,5 +1,7 @@
 import Link from "next/link"
 import { ArrowRight, Waypoints, Network, TrendingUp, Users, Zap } from "lucide-react"
+import { motion } from "motion/react";
+
 
 export default function Home() {
   return (
@@ -45,22 +47,18 @@ export default function Home() {
       <nav className="relative z-50 px-8 py-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="text-xs tracking-[0.2em] text-zinc-500 uppercase">
-            Network Intelligence
+            Networkify
           </div>
           
           <div className="flex items-center gap-8 text-sm">
             <Link href="/dashboard" className="text-zinc-400 hover:text-white transition-colors tracking-wide">
-              Terminal
+              Dashboard
             </Link>
             <Link href="/connections" className="text-zinc-400 hover:text-white transition-colors tracking-wide">
               Connections
             </Link>
             <Link href="/search" className="text-zinc-400 hover:text-white transition-colors tracking-wide">
-              Analytics
-            </Link>
-            <span className="text-zinc-600">/</span>
-            <Link href="#" className="text-zinc-400 hover:text-white transition-colors tracking-wide">
-              Docs
+              Search
             </Link>
           </div>
 
@@ -68,7 +66,7 @@ export default function Home() {
             href="/upload" 
             className="px-5 py-2 rounded-full border border-zinc-700 text-sm text-white hover:bg-white/5 transition-all flex items-center gap-2"
           >
-            Launch App
+            Sign in
             <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
@@ -80,16 +78,18 @@ export default function Home() {
           {/* Small label */}
           <div className="inline-flex items-center gap-2 text-xs tracking-[0.15em] text-purple-400/80 uppercase mb-8">
             <Waypoints className="w-3.5 h-3.5" />
-            <span>Pathfinder</span>
+            <span>Networkify</span>
           </div>
 
           {/* Main heading */}
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-light text-white leading-[1.1] mb-8 tracking-tight">
-            <span className="text-[#c8b6ff]">AI-Driven</span>
+            <span className="text-[#c8b6ff]">Connections</span>
             <br />
-            <span className="font-normal">Network</span>
+            <span className="font-normal">Visualized</span>
             <br />
-            <span className="font-normal">Intelligence</span>
+            <span className="font-small">and</span>
+            <br />
+            <span className="font-normal">Expanded</span>
           </h1>
 
           {/* Subtitle */}
@@ -129,7 +129,7 @@ export default function Home() {
         <div className="absolute left-8 bottom-32 max-w-[200px]">
           <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Career_Intelligence</p>
           <h3 className="text-lg font-medium text-white mb-4 leading-snug">
-            Autonomous networking reinvented
+            Managing Networking Reinvented
           </h3>
           <Link 
             href="/dashboard" 
@@ -140,14 +140,14 @@ export default function Home() {
           </Link>
         </div>
 
-        <div className="absolute right-8 bottom-32 max-w-[250px] text-right">
+        <div className="absolute right-8 bottom-32 max-w-[250px] text-left">
           <p className="text-[10px] text-zinc-500 leading-relaxed">
             Pathfinder is a next-generation networking engine designed to navigate the complexity of professional relationships.
           </p>
         </div>
 
         {/* Bottom CTA */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4">
+        <div className=" flex items-center gap-4">
           <div className="flex items-center gap-2 text-sm text-zinc-500">
             <div className="w-6 h-6 rounded-full border border-zinc-700 flex items-center justify-center">
               <Waypoints className="w-3 h-3" />
@@ -155,14 +155,14 @@ export default function Home() {
             <span>UNIV.0</span>
             <span className="text-zinc-700">=</span>
           </div>
-          
+          <div className="flex items-center gap-2 text-sm text-zinc-500">
           <Link 
             href="/upload" 
             className="px-5 py-2.5 rounded-full bg-[#d4ff00] text-black text-sm font-medium hover:bg-[#e5ff4d] transition-all flex items-center gap-2"
           >
-            <Zap className="w-4 h-4" />
             Connect
           </Link>
+          </div>
         </div>
       </main>
 

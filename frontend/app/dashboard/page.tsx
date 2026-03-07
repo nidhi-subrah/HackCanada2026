@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { 
@@ -88,8 +88,18 @@ const navItems = [
 export default function Dashboard() {
   const pathname = usePathname()
   const [currentMonth] = useState(new Date())
-  
-  const weeklyData = [
+  const [activeTime, setActiveTime] = useState("00:00:00")
+  const [pathsFound, setPathsFound] = useState(0)
+  const [bestDay, setBestDay] = useState(new Date().toLocaleDateString())
+  const [messagesSent, setMessagesSent] = useState(0)
+  const [responseRate, setResponseRate] = useState(0)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveTime(new Date().toLocaleTimeString())
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [])
+  const weeklyData = [//Needs to be set to real values
     { day: "Sun", height: 40 },
     { day: "Mon", height: 65 },
     { day: "Tue", height: 45 },
@@ -100,9 +110,8 @@ export default function Dashboard() {
   ]
 
   const metrics = {
-    connections: { value: "0", target: "500", percentage: 0 },
-    companies: { value: "0", target: "100", percentage: 0 },
-    paths: { value: "0", target: "50", percentage: 0 },
+    connections: { value: "0", target: "7", percentage: 0 },
+    companies: { value: "0", target: "5", percentage: 0 },
   }
 
   const calendarDays = Array.from({ length: 35 }, (_, i) => {
@@ -110,7 +119,42 @@ export default function Dashboard() {
     return day > 0 && day <= 31 ? day : null
   })
 
-  const activityDays = [3, 4, 5, 10, 11, 12, 17]
+  // Heatmap data: day -> number of connections (1-7)
+  const connectionHeatmap: Record<number, number> = {
+    1: 2,
+    3: 5,
+    4: 7,
+    5: 3,
+    8: 1,
+    10: 6,
+    11: 4,
+    12: 7,
+    14: 2,
+    15: 3,
+    17: 5,
+    18: 1,
+    20: 4,
+    22: 6,
+    23: 2,
+    25: 7,
+    27: 3,
+    28: 5,
+    30: 4,
+  }
+
+  // Get heatmap color based on connection count (1-7)
+  const getHeatmapColor = (connections: number): string => {
+    const colors: Record<number, string> = {
+      1: "bg-purple-500/20",
+      2: "bg-purple-500/30",
+      3: "bg-purple-500/40",
+      4: "bg-purple-500/55",
+      5: "bg-purple-500/70",
+      6: "bg-purple-500/85",
+      7: "bg-purple-500",
+    }
+    return colors[connections] || ""
+  }
 
   return (
     <div className="flex min-h-screen bg-dark-bg">
@@ -164,7 +208,7 @@ export default function Dashboard() {
               </button>
               <div className="flex gap-8 text-sm">
                 {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((d) => (
-                  <span key={d} className="text-zinc-500 w-8 text-center">{d}</span>
+                  <span key={d} className="text-zinc-500 w-[1.370rem] text-center">{d}</span>
                 ))}
               </div>
               <button className="text-zinc-500 hover:text-white transition-colors">
@@ -174,24 +218,28 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-7 gap-2 mb-6">
               {calendarDays.map((day, i) => {
-                const hasActivity = day && activityDays.includes(day)
+                const connections = day ? connectionHeatmap[day] : undefined
                 const isToday = day === 17
+                const heatmapColor = connections ? getHeatmapColor(connections) : ""
+                
                 return (
                   <div
                     key={i}
-                    className={`aspect-square rounded-xl flex items-center justify-center text-sm relative ${
+                    className={`aspect-square rounded-full flex items-center justify-center text-sm relative transition-all cursor-pointer group ${
                       day === null 
                         ? "text-zinc-700" 
                         : isToday
-                          ? "bg-brand-500 text-white font-medium"
-                          : "text-zinc-400 hover:bg-dark-elevated transition-colors cursor-pointer"
+                          ? "bg-purple-500 text-white font-medium ring-2 ring-purple-400 ring-offset-2 ring-offset-dark-surface"
+                          : connections
+                            ? `${heatmapColor} text-white hover:ring-1 hover:ring-purple-400/50`
+                            : "text-zinc-500 hover:bg-dark-elevated"
                     }`}
+                    title={connections ? `${connections} connection${connections > 1 ? 's' : ''} made` : undefined}
                   >
                     {day}
-                    {hasActivity && !isToday && (
-                      <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex gap-0.5">
-                        <div className="w-1 h-1 rounded-full bg-accent-rose" />
-                        <div className="w-1 h-1 rounded-full bg-accent-rose" />
+                    {connections && !isToday && (
+                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[8px] text-purple-300 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {connections}
                       </div>
                     )}
                   </div>
@@ -199,27 +247,42 @@ export default function Dashboard() {
               })}
             </div>
 
+            {/* Heatmap legend */}
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <span className="text-[10px] text-zinc-500">Less</span>
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5, 6, 7].map((level) => (
+                  <div
+                    key={level}
+                    className={`w-3 h-3 rounded-sm ${getHeatmapColor(level)}`}
+                    title={`${level} connection${level > 1 ? 's' : ''}`}
+                  />
+                ))}
+              </div>
+              <span className="text-[10px] text-zinc-500">More</span>
+            </div>
+
             <div className="grid grid-cols-3 gap-4 pt-4 border-t border-dark-glassBorder">
               <div>
                 <p className="text-xs text-zinc-500 mb-1">Active time</p>
-                <p className="text-lg font-semibold text-white">--</p>
+                <p className="text-lg font-semibold text-white">{activeTime}</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500 mb-1">Paths found</p>
-                <p className="text-lg font-semibold text-white">--</p>
+                <p className="text-lg font-semibold text-white">{pathsFound}</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500 mb-1">Best day</p>
-                <p className="text-lg font-semibold text-white">--</p>
+                <p className="text-lg font-semibold text-white">{bestDay}</p>
               </div>
             </div>
           </div>
-
+                {/* TODO: 3D GRAPH GOES HERE */}
           <div className="col-span-12 lg:col-span-7 bg-gradient-to-br from-brand-600/40 via-brand-500/30 to-accent-cyan/20 rounded-3xl p-8 relative overflow-hidden min-h-[360px]">
-            <div className="relative z-10">
+            <div className="relative z-10">{/* TODO: 3D GRAPH GOES HERE */}
               <h1 className="text-4xl lg:text-5xl font-bold text-white leading-tight mb-4">
-                Your Network,<br />
-                Your Power.
+                GRAPH GOES HERE,<br />
+                DONT FORGET TO REPLACE THIS
               </h1>
               <p className="text-zinc-300 max-w-sm mb-6">
                 Discover the warmest paths to any company with clarity and purpose.
@@ -229,7 +292,7 @@ export default function Dashboard() {
                 <span className="text-sm text-white">AI-Powered Path Discovery</span>
               </div>
             </div>
-
+{/* TODO: 3D GRAPH GOES HERE */}
             <div className="absolute right-0 top-0 bottom-0 w-1/2 flex items-center justify-center">
               <div className="relative w-48 h-48">
                 <div className="absolute inset-0 rounded-full border border-white/10 animate-pulse-slow" />
@@ -259,11 +322,9 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
-
+{/* TODO: 3D GRAPH GOES HERE */}
             <div className="absolute bottom-6 right-6 flex gap-2">
-              <div className="w-2 h-2 rounded-full bg-white" />
-              <div className="w-2 h-2 rounded-full bg-white/30" />
-              <div className="w-2 h-2 rounded-full bg-white/30" />
+              
             </div>
           </div>
 
@@ -284,19 +345,11 @@ export default function Dashboard() {
               percentage={metrics.companies.percentage}
               color="bg-accent-amber/20"
             />
-            <MetricBar
-              icon={<Waypoints className="w-5 h-5 text-accent-emerald" />}
-              label="Referral Paths"
-              value={metrics.paths.value}
-              target={metrics.paths.target}
-              percentage={metrics.paths.percentage}
-              color="bg-accent-emerald/20"
-            />
           </div>
 
           <div className="col-span-12 lg:col-span-4 bg-dark-surface rounded-3xl p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-white">This week</h3>
+              <h3 className="text-lg font-semibold text-white">Connections Made</h3>
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-accent-rose" />
                 <span className="text-xs text-zinc-500">Last week</span>
@@ -313,7 +366,7 @@ export default function Dashboard() {
           <div className="col-span-6 lg:col-span-3 grid grid-cols-1 gap-4">
             <StatCard
               icon={<Zap className="w-5 h-5 text-accent-amber" />}
-              value="--"
+              value={messagesSent.toString()}
               label="Messages Sent"
               color="bg-accent-amber/20"
             />
@@ -322,7 +375,7 @@ export default function Dashboard() {
           <div className="col-span-6 lg:col-span-3 grid grid-cols-1 gap-4">
             <StatCard
               icon={<Droplets className="w-5 h-5 text-accent-cyan" />}
-              value="--"
+              value={responseRate.toString()}
               label="Response Rate"
               color="bg-accent-cyan/20"
             />
