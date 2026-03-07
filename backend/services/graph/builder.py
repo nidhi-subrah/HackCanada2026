@@ -14,6 +14,9 @@ def parse_csv(file_bytes: bytes) -> pd.DataFrame:
     df = pd.read_csv(io.BytesIO(file_bytes), skiprows=3)
     df.columns = df.columns.str.strip()
     df = df.fillna("")
+    
+    df["Initials"] = df["First Name"].str[0] + df["Last Name"].str[0]
+    
     return df
 
 def make_id(name: str, email: str = "") -> str:
@@ -23,7 +26,7 @@ def make_id(name: str, email: str = "") -> str:
 def build_graph(df: pd.DataFrame, user: dict) -> dict:
     """
     Nodes:
-      (:Person {id, name, title, email, profile_url, connected_on, is_recruiter})
+      (:Person {id, name, title, email, profile_url, connected_on, is_recruiter, initials})
       (:Company {name})
     Relationships:
       (you)-[:KNOWS]->(connection)
@@ -33,10 +36,11 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
     stats = {"persons": 0, "companies": 0, "relationships": 0}
 
     # Create the user node
+    user_initials = "".join([part[0].upper() for part in user["name"].split() if part])
     db.run_write("""
         MERGE (p:Person {id: $id})
-        SET p.name = $name, p.title = $title, p.is_user = true
-    """, id=make_id(user["name"]), name=user["name"], title=user.get("title", ""))
+        SET p.name = $name, p.title = $title, p.is_user = true, p.initials = $initials
+    """, id=make_id(user["name"]), name=user["name"], title=user.get("title", ""), initials=user_initials)
 
     recruiter_keywords = ["recruiter", "talent acquisition", "hiring", "hr", "people ops", "talent partner"]
 
@@ -54,6 +58,8 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
 
         is_recruiter = any(kw in title.lower() for kw in recruiter_keywords)
 
+        initials = row.get("Initials", "")
+
         # Upsert Person
         db.run_write("""
             MERGE (p:Person {id: $id})
@@ -63,10 +69,11 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
                 p.profile_url = $profile_url,
                 p.connected_on = $connected_on,
                 p.is_recruiter = $is_recruiter,
-                p.degree = 1
+                p.degree = 1,
+                p.initials = $initials
         """, id=person_id, name=name, title=title, email=email,
              profile_url=profile_url, connected_on=connected_on,
-             is_recruiter=is_recruiter)
+             is_recruiter=is_recruiter, initials=initials)
         stats["persons"] += 1
 
         # Relationship: you → connection

@@ -14,6 +14,7 @@ type GraphNode = {
   type: "user" | "person" | "company"
   title?: string
   is_recruiter?: boolean
+  initials?: string
   x?: number
   y?: number
 }
@@ -104,6 +105,16 @@ export default function Graph({ width, height }: Props) {
     ctx.arc(node.x, node.y, r, 0, 2 * Math.PI)
     ctx.fillStyle = color
     ctx.fill()
+
+    // Initials inside node (for user and person nodes)
+    if (node.type !== "company" && node.initials) {
+      const initFontSize = Math.max(r * 1.1, 3)
+      ctx.font = `${initFontSize}px Inter, sans-serif`
+      ctx.textAlign = "center"
+      ctx.textBaseline = "middle"
+      ctx.fillStyle = "#FFFFFF"
+      ctx.fillText(node.initials, node.x, node.y)
+    }
 
     // Recruiter ring
     if (node.is_recruiter) {
