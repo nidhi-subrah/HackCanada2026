@@ -1,7 +1,8 @@
 "use client"
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import dynamic from "next/dynamic"
-import { Search, X, ExternalLink, User, Briefcase, Calendar, Shield, Box, Square } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Search, X, ExternalLink, User, Briefcase, Calendar, Shield, Box, Square, MessageSquare } from "lucide-react"
 import { useAuth, useAuthenticatedAxios } from "@/components/AuthContext"
 import * as THREE from "three"
 
@@ -76,6 +77,7 @@ function loadLogo(url: string): HTMLImageElement | null {
 }
 
 export default function Graph({ width, height, initialZoom, default3D = false }: Props) {
+  const router = useRouter()
   const fgRef = useRef<any>(null)
   const { isAuthenticated } = useAuth()
   const getAuthAxios = useAuthenticatedAxios()
@@ -501,17 +503,38 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
             )}
           </div>
 
-          {selectedNode.profile_url && (
-            <div className="px-5 pb-4">
-              <a
-                href={selectedNode.profile_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-[#0A66C2] hover:bg-[#0A66C2]/80 text-white text-sm font-medium transition-colors"
+          {selectedNode.type === "person" && (
+            <div className="px-5 pb-4 space-y-2">
+              <button
+                onClick={() => {
+                  // Find the company this person works at via WORKS_AT links
+                  const worksAtLink = data.links.find(link => {
+                    const srcId = typeof link.source === "string" ? link.source : link.source.id
+                    return srcId === selectedNode.id && link.label === "WORKS_AT"
+                  })
+                  const companyId = worksAtLink
+                    ? (typeof worksAtLink.target === "string" ? worksAtLink.target : worksAtLink.target.id)
+                    : ""
+                  const companyNode = companyId ? data.nodes.find(n => n.id === companyId) : null
+                  const companyName = companyNode?.name || ""
+                  router.push(`/search?q=${encodeURIComponent(companyName)}&person=${encodeURIComponent(selectedNode.name)}`)
+                }}
+                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors"
               >
-                <ExternalLink className="w-4 h-4" />
-                View LinkedIn Profile
-              </a>
+                <MessageSquare className="w-4 h-4" />
+                Draft Message
+              </button>
+              {selectedNode.profile_url && (
+                <a
+                  href={selectedNode.profile_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-[#0A66C2] hover:bg-[#0A66C2]/80 text-white text-sm font-medium transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  View LinkedIn Profile
+                </a>
+              )}
             </div>
           )}
         </div>

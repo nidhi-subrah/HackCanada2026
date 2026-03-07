@@ -1,9 +1,9 @@
 "use client"
-import { useRouter } from "next/navigation"
-import { Waypoints, Sparkles, MessageSquare, Copy, ChevronLeft, User, Building2, ArrowRight, CheckCircle2, Search, Loader2, Mail } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Waypoints, Sparkles, MessageSquare, Copy, ChevronLeft, User, Building2, ArrowRight, CheckCircle2, Search, Loader2, Mail, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import Sidebar from "@/components/Sidebar"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, Suspense } from "react"
 import { useAuth, useAuthenticatedAxios } from "@/components/AuthContext"
 
 
@@ -13,6 +13,7 @@ interface Contact {
   title?: string
   company?: string
   email?: string
+  profile_url?: string
   degree: number
   relevance_score: number
   is_recruiter?: boolean
@@ -31,12 +32,13 @@ interface SearchResults {
   page_size: number
 }
 
-export default function SearchPage() {
+function SearchPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { isAuthenticated, isLoading: authLoading, user } = useAuth()
   const getAuthAxios = useAuthenticatedAxios()
   
-  const [query, setQuery] = useState("")
+  const [query, setQuery] = useState(searchParams.get("q") || "")
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<SearchResults | null>(null)
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
@@ -46,6 +48,8 @@ export default function SearchPage() {
   const [emailError, setEmailError] = useState(false)
   const [searchPage, setSearchPage] = useState(1)
   const pageSize = 25
+  const autoTriggered = useRef(false)
+  const personParam = searchParams.get("person") || ""
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -86,6 +90,29 @@ export default function SearchPage() {
     }
   }
 
+  // Auto-trigger search when navigating from graph with ?q=Company&person=Name
+  useEffect(() => {
+    if (autoTriggered.current || !isAuthenticated || authLoading) return
+    const q = searchParams.get("q")
+    if (q && !results) {
+      autoTriggered.current = true
+      search()
+    }
+  }, [isAuthenticated, authLoading, searchParams])
+
+  // Auto-select person and generate message when results load from URL param
+  useEffect(() => {
+    if (!personParam || !results) return
+    const match = results.top_connections.find(
+      c => c.name.toLowerCase() === personParam.toLowerCase()
+    ) || results.recruiters?.find(
+      c => c.name.toLowerCase() === personParam.toLowerCase()
+    )
+    if (match && match !== selectedContact) {
+      generateMessage(match)
+    }
+  }, [results, personParam])
+
   const generateMessage = async (contact: Contact) => {
     setSelectedContact(contact)
     setMessageLoading(true)
@@ -107,9 +134,24 @@ export default function SearchPage() {
     }
   }
 
+  const logOutreach = async (channel: "copy" | "email") => {
+    if (!selectedContact) return
+    try {
+      const axios = await getAuthAxios()
+      await axios.post("/api/messages/log", {
+        target_name: selectedContact.name,
+        target_company: query,
+        channel,
+      })
+    } catch (e) {
+      console.error("Failed to log outreach:", e)
+    }
+  }
+
   const handleCopy = () => {
     navigator.clipboard.writeText(aiMessage)
     setCopiedMessage(true)
+    logOutreach("copy")
     setTimeout(() => setCopiedMessage(false), 2000)
   }
 
@@ -341,6 +383,7 @@ export default function SearchPage() {
                                 if (selectedContact?.email) {
                                   window.location.href = `mailto:${selectedContact.email}?subject=${encodeURIComponent("Quick Coffee Chat?")}&body=${encodeURIComponent(aiMessage)}`
                                   setEmailError(false)
+                                  logOutreach("email")
                                 } else {
                                   setEmailError(true)
                                 }
@@ -386,6 +429,18 @@ export default function SearchPage() {
   )
 }
 
+export default function SearchPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen bg-dark-bg items-center justify-center">
+        <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+      </div>
+    }>
+      <SearchPageInner />
+    </Suspense>
+  )
+}
+
 function ContactRow({ contact, onDraftMessage }: { contact: Contact; onDraftMessage: () => void }) {
   const matchPercent = Math.round(contact.relevance_score * 100)
   return (
@@ -407,11 +462,37 @@ function ContactRow({ contact, onDraftMessage }: { contact: Contact; onDraftMess
               {contact.is_recruiter && <span className="text-xs px-2 py-0.5 rounded-full bg-accent-amber/10 text-accent-amber border border-accent-amber/20">Recruiter</span>}
             </div>
             <p className="text-sm text-zinc-400 mb-1">{contact.title || "Unknown role"}</p>
+
+            {/* Email */}
+            <div className="flex items-center gap-1.5 mb-1">
+              <Mail className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+              {contact.email ? (
+                <a href={`mailto:${contact.email}`} className="text-xs text-brand-400 hover:text-brand-300 transition-colors truncate">
+                  {contact.email}
+                </a>
+              ) : (
+                <span className="text-xs text-zinc-600 italic">No email available</span>
+              )}
+            </div>
+
+            {/* LinkedIn */}
+            {contact.profile_url && (
+              <a
+                href={contact.profile_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-[#0A66C2] hover:text-[#0A66C2]/80 transition-colors"
+              >
+                <ExternalLink className="w-3 h-3" />
+                LinkedIn Profile
+              </a>
+            )}
+
             {contact.degree === 2 && contact.bridge && (
-              <p className="text-xs text-zinc-600">Via {contact.bridge.name}</p>
+              <p className="text-xs text-zinc-600 mt-1">Via {contact.bridge.name}</p>
             )}
             {contact.degree === 3 && contact.bridge && (contact as any).bridge2 && (
-              <p className="text-xs text-zinc-600">
+              <p className="text-xs text-zinc-600 mt-1">
                 Via {contact.bridge.name} → {(contact as any).bridge2.name}
               </p>
             )}

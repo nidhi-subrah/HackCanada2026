@@ -254,13 +254,6 @@ def get_graph_overview(current_user: dict = Depends(get_current_user)):
             )
             seen_nodes.add(pid)
 
-
-            links.append({
-                "source": user_id,
-                "target": pid,
-                "label": "KNOWS",
-            })
-
         # Add companies for this person from the lookup map
         for company in companies_by_person.get(pid, []):
             cname = company.get("name", "")
@@ -328,7 +321,6 @@ def get_company_subgraph(
     user_id = current_user["id"]
     result = db.run("""
         MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)-[:WORKS_AT]->(c:Company)
-
         WHERE toLower(c.name) CONTAINS toLower($company)
         RETURN u, p, c
     """,

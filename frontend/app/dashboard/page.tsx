@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -7,6 +7,7 @@ import {
 } from "lucide-react"
 import Sidebar from "@/components/Sidebar"
 import Graph from "@/components/graph/Graph"
+import { useAuth, useAuthenticatedAxios } from "@/components/AuthContext"
 
 
 interface MetricBarProps {
@@ -85,6 +86,8 @@ function WeeklyBar({ day, height, isActive }: WeeklyBarProps) {
 
 export default function Dashboard() {
   const pathname = usePathname()
+  const { isAuthenticated, isLoading: authLoading } = useAuth()
+  const getAuthAxios = useAuthenticatedAxios()
   const [currentMonth] = useState(new Date())
   const [activeTime, setActiveTime] = useState("00:00:00")
   const [pathsFound, setPathsFound] = useState(0)
@@ -98,6 +101,21 @@ export default function Dashboard() {
     }, 1000)
     return () => clearInterval(interval)
   }, [])
+
+  // Fetch real message stats
+  useEffect(() => {
+    if (!isAuthenticated || authLoading) return
+    async function fetchStats() {
+      try {
+        const axios = await getAuthAxios()
+        const res = await axios.get("/api/messages/stats")
+        setMessagesSent(res.data.messages_sent || 0)
+      } catch (e) {
+        console.error("Failed to fetch message stats:", e)
+      }
+    }
+    fetchStats()
+  }, [isAuthenticated, authLoading, getAuthAxios])
   const weeklyData = [//Needs to be set to real values
     { day: "Sun", height: 40 },
     { day: "Mon", height: 65 },
