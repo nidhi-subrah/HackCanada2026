@@ -4,7 +4,7 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = "pathfinder123"
-    openai_api_key: str = ""
+    gemini_api_key: str = ""
     scrapfly_api_key: str = ""
 
     class Config:
