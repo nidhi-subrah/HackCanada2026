@@ -109,6 +109,8 @@ def get_graph_overview(user_id: str = Query(...)):
                 "title": person.get("title", ""),
                 "is_recruiter": person.get("is_recruiter", False),
                 "initials": person.get("initials", ""),
+                "profile_url": person.get("profile_url", ""),
+                "connected_on": person.get("connected_on", ""),
             })
             seen_nodes.add(pid)
 

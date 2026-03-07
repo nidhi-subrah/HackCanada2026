@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import axios from "axios"
 import dynamic from "next/dynamic"
-import { Search, X } from "lucide-react"
+import { Search, X, ExternalLink, User, Briefcase, Calendar, Shield } from "lucide-react"
 
 // @ts-ignore - dynamic import without types
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d").then(mod => mod.default || mod), { ssr: false })
@@ -17,6 +17,8 @@ type GraphNode = {
   is_recruiter?: boolean
   initials?: string
   logo?: string
+  profile_url?: string
+  connected_on?: string
   x?: number
   y?: number
 }
@@ -71,6 +73,7 @@ export default function Graph({ width, height }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [isFocused, setIsFocused] = useState(false)
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
 
   // Collect all company names for autocomplete
   const companyNames = useMemo(() => {
@@ -162,6 +165,11 @@ export default function Graph({ width, height }: Props) {
       fgRef.current.centerAt(node.x, node.y, 600)
       fgRef.current.zoom(2.5, 600)
     }
+    if (node.type === "person" || node.type === "user") {
+      setSelectedNode(node as GraphNode)
+    } else {
+      setSelectedNode(null)
+    }
   }, [])
 
   const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -252,7 +260,7 @@ export default function Graph({ width, height }: Props) {
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
       ctx.fillStyle = "rgba(161,161,170,0.7)"
-      ctx.fillText(link.label === "KNOWS" ? "knows" : "works at", mx, my)
+     //  ctx.fillText(link.label === "KNOWS" ? "knows" : "works at", mx, my)
     }
   }, [])
 
@@ -333,6 +341,92 @@ export default function Graph({ width, height }: Props) {
         )}
       </div>
 
+      {/* Person Detail Panel */}
+      {selectedNode && (
+        <div className="absolute top-4 right-4 z-10 w-72 rounded-2xl bg-dark-bg/95 backdrop-blur-md border border-dark-glassBorder shadow-lg overflow-hidden">
+          {/* Header */}
+          <div className="relative px-5 pt-5 pb-4 border-b border-dark-glassBorder">
+            <button
+              onClick={() => setSelectedNode(null)}
+              className="absolute top-3 right-3 text-zinc-500 hover:text-white transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold text-white ${
+                  selectedNode.type === "user" ? "bg-[#8B5CF6]" : "bg-[#06B6D4]"
+                }`}
+              >
+                {selectedNode.initials || selectedNode.name?.charAt(0) || "?"}
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-white truncate">{selectedNode.name}</h3>
+                {selectedNode.type === "user" && (
+                  <span className="text-xs text-brand-400 font-medium">You</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Details */}
+          <div className="px-5 py-4 space-y-3">
+            {selectedNode.title && (
+              <div className="flex items-start gap-3">
+                <Briefcase className="w-4 h-4 text-zinc-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-zinc-500">Position</p>
+                  <p className="text-sm text-zinc-200">{selectedNode.title}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-start gap-3">
+              <User className="w-4 h-4 text-zinc-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-xs text-zinc-500">Type</p>
+                <p className="text-sm text-zinc-200 capitalize">{selectedNode.type === "user" ? "You" : "1st Connection"}</p>
+              </div>
+            </div>
+
+            {selectedNode.is_recruiter && (
+              <div className="flex items-start gap-3">
+                <Shield className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-zinc-500">Recruiter</p>
+                  <p className="text-sm text-emerald-400 font-medium">Yes</p>
+                </div>
+              </div>
+            )}
+
+            {selectedNode.connected_on && (
+              <div className="flex items-start gap-3">
+                <Calendar className="w-4 h-4 text-zinc-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className     ="text-xs text-zinc-500">Connected On</p>
+                  <p className="text-sm text-zinc-200">{selectedNode.connected_on}</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* LinkedIn Link */}
+          {selectedNode.profile_url && (
+            <div className="px-5 pb-4">
+              <a
+                href={selectedNode.profile_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-[#0A66C2] hover:bg-[#0A66C2]/80 text-white text-sm font-medium transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                View LinkedIn Profile
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+
       <ForceGraph2D
         ref={fgRef}
         graphData={filteredData}
@@ -351,6 +445,7 @@ export default function Graph({ width, height }: Props) {
         linkDirectionalArrowLength={4}
         linkDirectionalArrowRelPos={0.9}
         onNodeClick={handleNodeClick}
+        onBackgroundClick={() => setSelectedNode(null)}
         cooldownTicks={100}
         d3AlphaDecay={0.02}
         d3VelocityDecay={0.3}
