@@ -3,9 +3,10 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-  Waypoints, ArrowUpRight, Zap, Droplets, ChevronLeft, ChevronRight
+  Waypoints, ArrowUpRight, Zap, Droplets, ChevronLeft, ChevronRight, Maximize2
 } from "lucide-react"
 import Sidebar from "@/components/Sidebar"
+import Graph from "@/components/graph/Graph"
 
 
 interface MetricBarProps {
@@ -90,6 +91,7 @@ export default function Dashboard() {
   const [bestDay, setBestDay] = useState(new Date().toLocaleDateString())
   const [messagesSent, setMessagesSent] = useState(0)
   const [responseRate, setResponseRate] = useState(0)
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   useEffect(() => {
     const interval = setInterval(() => {
       setActiveTime(new Date().toLocaleTimeString())
@@ -253,55 +255,16 @@ export default function Dashboard() {
             </div>
           </div>
                 {/* TODO: 3D GRAPH GOES HERE */}
-          <div className="col-span-12 lg:col-span-7 bg-gradient-to-br from-brand-600/40 via-brand-500/30 to-accent-cyan/20 rounded-3xl p-8 relative overflow-hidden min-h-[360px]">
-            <div className="relative z-10">{/* TODO: 3D GRAPH GOES HERE */}
-              <h1 className="text-4xl lg:text-5xl font-bold text-white leading-tight mb-4">
-                GRAPH GOES HERE,<br />
-                DONT FORGET TO REPLACE THIS
-              </h1>
-              <p className="text-zinc-300 max-w-sm mb-6">
-                Discover the warmest paths to any company with clarity and purpose.
-              </p>
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20">
-                <Zap className="w-4 h-4 text-accent-amber" />
-                <span className="text-sm text-white">AI-Powered Path Discovery</span>
-              </div>
+          <div className="col-span-12 lg:col-span-7 bg-gradient-to-br from-brand-600/40 via-brand-500/30 to-accent-cyan/20 rounded-3xl p-8 relative overflow-hidden min-h-[360px] group">
+              <Link 
+                href="/graph?zoom=true"
+                className="absolute top-4 right-4 z-20 w-10 h-10 rounded-xl bg-dark-bg/80 backdrop-blur-md border border-dark-glassBorder flex items-center justify-center text-zinc-400 hover:text-white hover:bg-dark-surface transition-all opacity-0 group-hover:opacity-100"
+                title="Fullscreen Graph"
+              >
+                <Maximize2 className="w-5 h-5" />
+              </Link>
+              <Graph width={dimensions.width} height={dimensions.height} />
             </div>
-{/* TODO: 3D GRAPH GOES HERE */}
-            <div className="absolute right-0 top-0 bottom-0 w-1/2 flex items-center justify-center">
-              <div className="relative w-48 h-48">
-                <div className="absolute inset-0 rounded-full border border-white/10 animate-pulse-slow" />
-                <div className="absolute inset-6 rounded-full border border-white/10" />
-                <div className="absolute inset-12 rounded-full border border-white/20" />
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-gradient-to-br from-brand-400 to-accent-cyan flex items-center justify-center shadow-glow">
-                  <Waypoints className="w-8 h-8 text-white" />
-                </div>
-                {[
-                  { top: "5%", left: "50%", color: "bg-accent-cyan" },
-                  { top: "25%", left: "90%", color: "bg-purple-400" },
-                  { top: "75%", left: "85%", color: "bg-accent-emerald" },
-                  { top: "90%", left: "50%", color: "bg-accent-amber" },
-                  { top: "70%", left: "10%", color: "bg-accent-rose" },
-                  { top: "20%", left: "15%", color: "bg-blue-400" },
-                ].map((node, i) => (
-                  <div
-                    key={i}
-                    className={`absolute w-3 h-3 rounded-full ${node.color} shadow-lg animate-float`}
-                    style={{
-                      top: node.top,
-                      left: node.left,
-                      transform: "translate(-50%, -50%)",
-                      animationDelay: `${i * 0.4}s`
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-{/* TODO: 3D GRAPH GOES HERE */}
-            <div className="absolute bottom-6 right-6 flex gap-2">
-             
-            </div>
-          </div>
 
 
           <div className="col-span-12 lg:col-span-5 space-y-4">
