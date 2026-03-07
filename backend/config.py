@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     neo4j_user: str = ""
     neo4j_password: str = ""
     openai_api_key: str = ""
+    gemini_api_key: str = ""
     scrapfly_api_key: str = ""
     auth0_domain: str
     auth0_client_id: str
