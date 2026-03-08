@@ -6,6 +6,8 @@ import time
 import httpx
 from config import settings, Settings
 
+from services.ai.backboard_service import backboard
+
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 MODELS_TO_TRY = [
@@ -16,7 +18,7 @@ MODELS_TO_TRY = [
 
 
 def _template_message(user: dict, target_person: dict, target_company: str, context: dict) -> str:
-    """Generate a personalized message using templates when Gemini is unavailable."""
+    """Generate a personalized message using templates when AI is unavailable."""
     name = target_person.get("name", "").split()[0]  # First name
     title = target_person.get("title", "")
     degree = target_person.get("degree", 1)
@@ -54,24 +56,19 @@ def _template_message(user: dict, target_person: dict, target_company: str, cont
         )
 
 
-def generate_outreach_message(
+async def generate_outreach_message(
     user: dict,
     target_person: dict,
     target_company: str,
     context: dict
 ) -> str:
-    # Instantiate Settings freshly on every request so it re-reads .env
-    api_key = Settings().gemini_api_key
-    if not api_key or api_key.startswith("your_"):
-        return _template_message(user, target_person, target_company, context)
-
+    # Build concise prompt
     bridge = context.get("bridge_person")
     degree = target_person.get("degree", 1)
     title = target_person.get("title", "")
     is_recruiter = target_person.get("is_recruiter", False)
     sender = user.get("name", "someone")
 
-    # Build concise prompt
     parts = [f"Write a short 3-4 line LinkedIn message from {sender} to {target_person['name']}"]
     if title:
         parts.append(f"who is a {title}")
@@ -88,6 +85,19 @@ def generate_outreach_message(
 
     prompt = " ".join(parts)
 
+    # 1. Try Backboard.io first
+    try:
+        text = await backboard.generate_completion(prompt, model="gpt-4o-mini")
+        if text and len(text) > 30:
+            return text
+    except Exception as e:
+        print(f"Backboard failed: {e}, falling back to Gemini")
+
+    # 2. Fallback to Gemini REST API
+    api_key = Settings().gemini_api_key
+    if not api_key or api_key.startswith("your_"):
+        return _template_message(user, target_person, target_company, context)
+
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
@@ -99,21 +109,18 @@ def generate_outreach_message(
     for model in MODELS_TO_TRY:
         url = f"{BASE_URL}/models/{model}:generateContent?key={api_key}"
         try:
-            resp = httpx.post(url, json=payload, timeout=30.0)
-            data = resp.json()
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json=payload, timeout=30.0)
+                data = resp.json()
 
-            if "error" in data:
-                error_code = str(data["error"].get("code", ""))
-                if "429" in error_code or "RESOURCE_EXHAUSTED" in data["error"].get("message", ""):
+                if "error" in data:
                     continue
-                # Non-rate-limit error — try next model
-                continue
 
-            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            if len(text) > 30:
-                return text
+                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                if len(text) > 30:
+                    return text
         except Exception:
             continue
 
-    # All models failed — use template fallback
+    # 3. All models failed — use template fallback
     return _template_message(user, target_person, target_company, context)

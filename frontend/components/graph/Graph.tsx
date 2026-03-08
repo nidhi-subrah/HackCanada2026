@@ -232,6 +232,7 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
   const [hasInitialZoomed, setHasInitialZoomed] = useState(false)
   const [is3D, setIs3D] = useState(default3D)
+  const [isSwitchingMode, setIsSwitchingMode] = useState(false)
 
   const companyNames = useMemo(() => {
     return data.nodes
@@ -337,6 +338,7 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
   }, [is3D])
 
   const handleEngineStop = useCallback(() => {
+    setIsSwitchingMode(false)
     if (initialZoom && !hasInitialZoomed && fgRef.current && data.nodes.length > 0) {
       setHasInitialZoomed(true)
       const userNode = data.nodes.find(n => n.type === "user")
@@ -489,18 +491,53 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
 
   return (
     <div className="relative w-full h-full">
+      {/* Mode Switching Overlay */}
+      {isSwitchingMode && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-dark-bg/90 backdrop-blur-sm">
+          <div className="text-center">
+            <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-zinc-400">Switching view mode...</p>
+          </div>
+        </div>
+      )}
+
       {/* 2D/3D Toggle */}
-      <div className="absolute top-4 right-4 z-10">
+      <div className="absolute top-4 right-32 z-10 flex rounded-xl overflow-hidden border border-dark-glassBorder bg-dark-bg/90 backdrop-blur-md">
         <button
           onClick={() => {
-            setIs3D(!is3D)
-            setHasInitialZoomed(false)
+            if (is3D) {
+              setIsSwitchingMode(true)
+              setIs3D(false)
+              setHasInitialZoomed(false)
+            }
           }}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-dark-bg/90 backdrop-blur-md border border-dark-glassBorder text-sm text-zinc-300 hover:text-white hover:border-brand-500 transition-all"
-          title={is3D ? "Switch to 2D" : "Switch to 3D"}
+          className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-all ${
+            !is3D 
+              ? "bg-brand-600 text-white" 
+              : "text-zinc-400 hover:text-white hover:bg-dark-elevated"
+          }`}
+          title="2D View"
         >
-          {is3D ? <Square className="w-4 h-4" /> : <Box className="w-4 h-4" />}
-          <span>{is3D ? "2D" : "3D"}</span>
+          <Square className="w-4 h-4" />
+          <span>2D</span>
+        </button>
+        <button
+          onClick={() => {
+            if (!is3D) {
+              setIsSwitchingMode(true)
+              setIs3D(true)
+              setHasInitialZoomed(false)
+            }
+          }}
+          className={`flex items-center gap-1.5 px-3 py-2 text-sm transition-all ${
+            is3D 
+              ? "bg-brand-600 text-white" 
+              : "text-zinc-400 hover:text-white hover:bg-dark-elevated"
+          }`}
+          title="3D View"
+        >
+          <Box className="w-4 h-4" />
+          <span>3D</span>
         </button>
       </div>
 

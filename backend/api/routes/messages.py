@@ -26,6 +26,10 @@ class LinkedInVisitRequest(BaseModel):
     company_name: str | None = None
 
 
+class ActiveTimeRequest(BaseModel):
+    seconds: int
+
+
 @router.post("/generate")
 async def generate_message(
     req: MessageRequest,
@@ -41,7 +45,7 @@ async def generate_message(
             "email": current_user["email"],
         }
         
-        message = generate_outreach_message(
+        message = await generate_outreach_message(
             user=user,
             target_person=req.target_person,
             target_company=req.target_company,
@@ -106,7 +110,8 @@ async def log_linkedin_visit(
     try:
         db.run_write(
             """
-            MATCH (u:Person {id: $user_id})
+            MERGE (u:Person {id: $user_id})
+            ON CREATE SET u.name = $user_name, u.is_user = true
             MERGE (v:LinkedInVisit {user_id: $user_id, person_id: $person_id})
             ON CREATE SET 
                 v.person_name = $person_name,
@@ -117,6 +122,7 @@ async def log_linkedin_visit(
             MERGE (u)-[:VISITED]->(v)
             """,
             user_id=user_id,
+            user_name=current_user.get("name") or current_user.get("email", "User"),
             person_id=req.person_id,
             person_name=req.person_name,
             company_name=req.company_name,
@@ -134,7 +140,7 @@ def get_visit_stats(current_user: dict = Depends(get_current_user)):
     
     connections_result = db.run(
         """
-        MATCH (u:Person {id: $user_id})-[:VISITED]->(v:LinkedInVisit)
+        MATCH (v:LinkedInVisit {user_id: $user_id})
         RETURN count(DISTINCT v.person_id) as connections_visited
         """,
         user_id=user_id,
@@ -142,7 +148,7 @@ def get_visit_stats(current_user: dict = Depends(get_current_user)):
     
     companies_result = db.run(
         """
-        MATCH (u:Person {id: $user_id})-[:VISITED]->(v:LinkedInVisit)
+        MATCH (v:LinkedInVisit {user_id: $user_id})
         WHERE v.company_name IS NOT NULL AND v.company_name <> ''
         RETURN count(DISTINCT v.company_name) as companies_visited
         """,
@@ -184,3 +190,40 @@ def get_daily_visits(current_user: dict = Depends(get_current_user)):
             pass
 
     return {"daily": daily, "year": now.year, "month": now.month}
+
+
+@router.get("/active-time")
+def get_active_time(current_user: dict = Depends(get_current_user)):
+    """Get total active time in seconds for the user."""
+    user_id = current_user["id"]
+    result = db.run(
+        """
+        MATCH (t:ActiveTime {user_id: $user_id})
+        RETURN t.total_seconds as total_seconds
+        """,
+        user_id=user_id,
+    )
+    return {"total_seconds": result[0]["total_seconds"] if result else 0}
+
+
+@router.post("/active-time")
+async def update_active_time(
+    req: ActiveTimeRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Add seconds to the user's total active time."""
+    user_id = current_user["id"]
+    try:
+        db.run_write(
+            """
+            MERGE (t:ActiveTime {user_id: $user_id})
+            ON CREATE SET t.total_seconds = $seconds, t.updated_at = $now
+            ON MATCH SET t.total_seconds = t.total_seconds + $seconds, t.updated_at = $now
+            """,
+            user_id=user_id,
+            seconds=req.seconds,
+            now=datetime.now(timezone.utc).isoformat(),
+        )
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
