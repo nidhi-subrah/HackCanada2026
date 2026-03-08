@@ -42,6 +42,7 @@ type Props = {
   height?: number
   initialZoom?: boolean
   default3D?: boolean
+  activeFilter?: string | null
 }
 
 const NODE_COLORS: Record<string, string> = {
@@ -76,7 +77,7 @@ function loadLogo(url: string): HTMLImageElement | null {
   return null
 }
 
-export default function Graph({ width, height, initialZoom, default3D = false }: Props) {
+export default function Graph({ width, height, initialZoom, default3D = false, activeFilter = null }: Props) {
   const router = useRouter()
   const fgRef = useRef<any>(null)
   const { isAuthenticated } = useAuth()
@@ -90,55 +91,112 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
   const [hasInitialZoomed, setHasInitialZoomed] = useState(false)
   const [is3D, setIs3D] = useState(default3D)
 
-  const companyNames = useMemo(() => {
+  // Collect all searchable names for autocomplete (companies + people)
+  const searchableNames = useMemo(() => {
     return data.nodes
-      .filter(n => n.type === "company")
-      .map(n => n.name)
-      .sort((a, b) => a.localeCompare(b))
+      .filter(n => n.type === "company" || n.type === "person")
+      .map(n => ({ name: n.name, type: n.type }))
+      .sort((a, b) => a.name.localeCompare(b.name))
   }, [data.nodes])
 
   const suggestions = useMemo(() => {
     if (!searchQuery.trim()) return []
     const q = searchQuery.toLowerCase()
-    return companyNames.filter(name => name.toLowerCase().includes(q)).slice(0, 8)
-  }, [searchQuery, companyNames])
+    return searchableNames
+      .filter(item => item.name.toLowerCase().includes(q))
+      .slice(0, 8)
+  }, [searchQuery, searchableNames])
 
   const filteredData = useMemo<GraphData>(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return data
+    let working = data
 
+    // Apply recruiter filter from legend click
+    if (activeFilter === "recruiter") {
+      const recruiterIds = new Set<string>()
+      const companyIds = new Set<string>()
+
+      data.nodes.forEach(n => {
+        if (n.is_recruiter) recruiterIds.add(n.id)
+      })
+
+      // Also keep the user node
+      const userNode = data.nodes.find(n => n.type === "user")
+      if (userNode) recruiterIds.add(userNode.id)
+
+      // Keep companies connected to recruiters
+      data.links.forEach(link => {
+        const srcId = typeof link.source === "string" ? link.source : link.source.id
+        const tgtId = typeof link.target === "string" ? link.target : link.target.id
+        if (recruiterIds.has(srcId) && link.label === "WORKS_AT") companyIds.add(tgtId)
+        if (recruiterIds.has(tgtId) && link.label === "WORKS_AT") companyIds.add(srcId)
+      })
+
+      const keepIds = new Set<string>()
+      recruiterIds.forEach(id => keepIds.add(id))
+      companyIds.forEach(id => keepIds.add(id))
+
+      const nodes = data.nodes.filter(n => keepIds.has(n.id))
+      const links = data.links.filter(link => {
+        const srcId = typeof link.source === "string" ? link.source : link.source.id
+        const tgtId = typeof link.target === "string" ? link.target : link.target.id
+        return keepIds.has(srcId) && keepIds.has(tgtId)
+      })
+      working = { nodes, links }
+    }
+
+    // Apply search query
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return working
+
+    // Match companies by name
     const matchedCompanyIds = new Set(
-      data.nodes
+      working.nodes
         .filter(n => n.type === "company" && n.name.toLowerCase().includes(q))
         .map(n => n.id)
     )
 
-    if (matchedCompanyIds.size === 0) return data
+    // Match people by name
+    const matchedPersonIds = new Set(
+      working.nodes
+        .filter(n => (n.type === "person" || n.type === "user") && n.name.toLowerCase().includes(q))
+        .map(n => n.id)
+    )
 
-    const connectedPersonIds = new Set<string>()
-    data.links.forEach(link => {
-      const srcId = typeof link.source === "string" ? link.source : link.source.id
-      const tgtId = typeof link.target === "string" ? link.target : link.target.id
-      if (matchedCompanyIds.has(tgtId)) connectedPersonIds.add(srcId)
-      if (matchedCompanyIds.has(srcId)) connectedPersonIds.add(tgtId)
-    })
-
-    const userNode = data.nodes.find(n => n.type === "user")
-    if (userNode) connectedPersonIds.add(userNode.id)
+    if (matchedCompanyIds.size === 0 && matchedPersonIds.size === 0) return working
 
     const keepIds = new Set<string>()
-    matchedCompanyIds.forEach(id => keepIds.add(id))
-    connectedPersonIds.forEach(id => keepIds.add(id))
 
-    const nodes = data.nodes.filter(n => keepIds.has(n.id))
-    const links = data.links.filter(link => {
+    // Always keep the user node
+    const userNode = working.nodes.find(n => n.type === "user")
+    if (userNode) keepIds.add(userNode.id)
+
+    // Add matched companies and their connected people
+    matchedCompanyIds.forEach(id => keepIds.add(id))
+    working.links.forEach(link => {
+      const srcId = typeof link.source === "string" ? link.source : link.source.id
+      const tgtId = typeof link.target === "string" ? link.target : link.target.id
+      if (matchedCompanyIds.has(tgtId)) keepIds.add(srcId)
+      if (matchedCompanyIds.has(srcId)) keepIds.add(tgtId)
+    })
+
+    // Add matched people and their connected companies
+    matchedPersonIds.forEach(id => keepIds.add(id))
+    working.links.forEach(link => {
+      const srcId = typeof link.source === "string" ? link.source : link.source.id
+      const tgtId = typeof link.target === "string" ? link.target : link.target.id
+      if (matchedPersonIds.has(srcId) && link.label === "WORKS_AT") keepIds.add(tgtId)
+      if (matchedPersonIds.has(tgtId) && link.label === "WORKS_AT") keepIds.add(srcId)
+    })
+
+    const nodes = working.nodes.filter(n => keepIds.has(n.id))
+    const links = working.links.filter(link => {
       const srcId = typeof link.source === "string" ? link.source : link.source.id
       const tgtId = typeof link.target === "string" ? link.target : link.target.id
       return keepIds.has(srcId) && keepIds.has(tgtId)
     })
 
     return { nodes, links }
-  }, [data, searchQuery])
+  }, [data, searchQuery, activeFilter])
 
   useEffect(() => {
     let mounted = true
@@ -308,6 +366,9 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
     const size = NODE_SIZES_3D[node.type as string] || 4
     const color = NODE_COLORS[node.type as string] || "#888"
     
+    const group = new THREE.Group()
+
+    // Main shape
     const geometry = node.type === "company" 
       ? new THREE.BoxGeometry(size, size, size)
       : new THREE.SphereGeometry(size, 16, 16)
@@ -319,7 +380,9 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
     })
     
     const mesh = new THREE.Mesh(geometry, material)
+    group.add(mesh)
     
+    // Glow for user node
     if (node.type === "user") {
       const glowGeometry = new THREE.SphereGeometry(size * 1.5, 16, 16)
       const glowMaterial = new THREE.MeshBasicMaterial({
@@ -328,9 +391,10 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
         opacity: 0.2,
       })
       const glow = new THREE.Mesh(glowGeometry, glowMaterial)
-      mesh.add(glow)
+      group.add(glow)
     }
     
+    // Recruiter ring
     if (node.is_recruiter) {
       const ringGeometry = new THREE.RingGeometry(size * 1.2, size * 1.4, 32)
       const ringMaterial = new THREE.MeshBasicMaterial({
@@ -340,10 +404,56 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
         opacity: 0.8,
       })
       const ring = new THREE.Mesh(ringGeometry, ringMaterial)
-      mesh.add(ring)
+      group.add(ring)
+    }
+
+    // Initials sprite for person/user nodes
+    if (node.type !== "company" && node.initials) {
+      const canvas = document.createElement("canvas")
+      canvas.width = 64
+      canvas.height = 64
+      const ctx2d = canvas.getContext("2d")!
+      ctx2d.clearRect(0, 0, 64, 64)
+      ctx2d.font = "bold 32px Inter, sans-serif"
+      ctx2d.textAlign = "center"
+      ctx2d.textBaseline = "middle"
+      ctx2d.fillStyle = "#FFFFFF"
+      ctx2d.fillText(node.initials, 32, 32)
+      const tex = new THREE.CanvasTexture(canvas)
+      const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false })
+      const sprite = new THREE.Sprite(spriteMat)
+      sprite.scale.set(size * 1.6, size * 1.6, 1)
+      group.add(sprite)
+    }
+
+    // Company logo sprite (Sprites always face the camera automatically)
+    if (node.type === "company" && node.logo) {
+      const cached = loadLogo(node.logo)
+      if (cached) {
+        const tex = new THREE.Texture(cached)
+        tex.needsUpdate = true
+        const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false })
+        const sprite = new THREE.Sprite(spriteMat)
+        sprite.scale.set(size * 2, size * 2, 1)
+        group.add(sprite)
+      } else {
+        // Image not loaded yet — try again when it loads
+        const img = new Image()
+        img.crossOrigin = "anonymous"
+        img.onload = () => {
+          logoCache.set(node.logo, img)
+          const tex = new THREE.Texture(img)
+          tex.needsUpdate = true
+          const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false })
+          const sprite = new THREE.Sprite(spriteMat)
+          sprite.scale.set(size * 2, size * 2, 1)
+          group.add(sprite)
+        }
+        img.src = node.logo
+      }
     }
     
-    return mesh
+    return group
   }, [])
 
   if (loading) {
@@ -392,7 +502,7 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
             onChange={e => setSearchQuery(e.target.value)}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setTimeout(() => setIsFocused(false), 150)}
-            placeholder="Search companies..."
+            placeholder="Search companies or people..."
             className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-dark-bg/90 backdrop-blur-md border border-dark-glassBorder text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30 transition-all"
           />
           {searchQuery && (
@@ -406,18 +516,19 @@ export default function Graph({ width, height, initialZoom, default3D = false }:
         </div>
 
         {isFocused && suggestions.length > 0 && (
-          <div className="mt-1 rounded-xl bg-dark-bg/95 backdrop-blur-md border border-dark-glassBorder overflow-hidden shadow-lg">
-            {suggestions.map(name => (
+          <div className="mt-1 rounded-xl bg-dark-bg/95 backdrop-blur-md border border-dark-glassBorder overflow-hidden shadow-lg max-h-64 overflow-y-auto">
+            {suggestions.map(item => (
               <button
-                key={name}
+                key={`${item.type}-${item.name}`}
                 onMouseDown={() => {
-                  setSearchQuery(name)
+                  setSearchQuery(item.name)
                   setIsFocused(false)
                 }}
                 className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-brand-500/20 hover:text-white transition-colors flex items-center gap-2"
               >
-                <div className="w-2 h-2 rounded-full bg-[#F59E0B]" />
-                {name}
+                <div className={`w-2 h-2 rounded-full ${item.type === "company" ? "bg-[#F59E0B]" : "bg-[#06B6D4]"}`} />
+                <span className="truncate">{item.name}</span>
+                <span className="text-[10px] text-zinc-600 ml-auto shrink-0">{item.type === "company" ? "Company" : "Person"}</span>
               </button>
             ))}
           </div>

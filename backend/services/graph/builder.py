@@ -8,7 +8,6 @@ import pandas as pd
 import hashlib
 import re
 from db.neo4j_client import db
-from db.redis_client import redis_client
 from config import settings
 
 LOGO_DEV_TOKEN = settings.logo_dev_token
@@ -19,11 +18,6 @@ def company_to_logo_url(company_name: str) -> str:
     Guesses the domain from the company name (e.g. 'Google' -> 'google.com')."""
     if not company_name:
         return ""
-        
-    cache_key = f"logo:{company_name}"
-    cached = redis_client.get(cache_key)
-    if cached:
-        return cached
 
     # Clean the name: remove Inc, Ltd, Corp, LLC, etc.
     clean = re.sub(r'\b(inc|ltd|llc|corp|corporation|co|company|group|technologies|tech|software|solutions|labs|limited|plc)\b',
@@ -35,8 +29,6 @@ def company_to_logo_url(company_name: str) -> str:
         return ""
     domain = f"{slug}.com"
     url = f"https://img.logo.dev/{domain}?token={LOGO_DEV_TOKEN}&size=64"
-    
-    redis_client.setex(cache_key, 604800, url) # Cache for 7 days
     return url
 
 def parse_csv(file_bytes: bytes) -> pd.DataFrame:

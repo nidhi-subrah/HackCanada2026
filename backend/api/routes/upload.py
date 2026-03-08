@@ -107,6 +107,30 @@ async def upload_additional_network(
             src_id=source_person_id,
         )
 
+        # Remove connections that the primary user already has directly.
+        # We only want unique 2nd-degree connections from this secondary network.
+        db.run_write(
+            """
+            MATCH (owner:Person {id: $owner_id})-[:KNOWS]->(shared:Person)<-[:KNOWS]-(src:Person {id: $src_id})
+            WHERE shared.id <> $owner_id AND shared.id <> $src_id
+            WITH src, shared
+            MATCH (src)-[r:KNOWS]->(shared)
+            DELETE r
+        """,
+            owner_id=owner_user_id,
+            src_id=source_person_id,
+        )
+
+        # Also remove any company nodes that are now orphaned
+        # (no person connects to them anymore)
+        db.run_write(
+            """
+            MATCH (c:Company)
+            WHERE NOT EXISTS { ()-[:WORKS_AT]->(c) }
+            DETACH DELETE c
+        """,
+        )
+
     return {
         "success": True,
         "source_person_id": source_person_id,
