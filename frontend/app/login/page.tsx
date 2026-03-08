@@ -105,14 +105,14 @@ export default function LoginPage() {
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-cyan flex items-center justify-center shadow-glow group-hover:shadow-glow-lg transition-all">
               <Waypoints className="w-6 h-6 text-white" />
             </div>
-            <span className="text-xl font-semibold text-white tracking-tight">Pathfinder</span>
+            <span className="text-xl font-semibold text-white tracking-tight">Networkify</span>
           </Link>
 
           <h1 className="text-3xl font-bold text-white mb-3">
             {isSignUp ? "Create an account" : "Welcome back"}
           </h1>
           <p className="text-zinc-500 text-sm">
-            {isSignUp ? "Join Pathfinder to map your professional growth" : "Sign in to explore your professional network"}
+            {isSignUp ? "Join Networkify to map your professional growth" : "Sign in to explore your professional network"}
           </p>
         </div>
 

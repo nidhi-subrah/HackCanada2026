@@ -2,47 +2,37 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { ArrowRight, Waypoints, Network, TrendingUp, Users, Zap } from "lucide-react"
-import dynamic from "next/dynamic"
 import { useEffect, useState } from "react"
 import { useAuth } from "@/components/AuthContext"
-
-const DemoGraph3D = dynamic(() => import("@/components/graph/DemoGraph3D"), { 
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-[#0a0a12]" />
-})
 
 
 export default function Home() {
   const router = useRouter()
   const { isAuthenticated, isLoading, user } = useAuth()
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
-  const [mounted, setMounted] = useState(false)
 
   const userInitials = user?.name
     ? user.name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase()
     : user?.email?.[0]?.toUpperCase() || "?"
 
-  useEffect(() => {
-    setMounted(true)
-    const updateDimensions = () => {
-      setDimensions({ width: window.innerWidth, height: window.innerHeight })
-    }
-    updateDimensions()
-    window.addEventListener("resize", updateDimensions)
-    return () => window.removeEventListener("resize", updateDimensions)
-  }, [])
 
   return (
     <div className="min-h-screen bg-[#0a0a12] relative overflow-hidden">
-      {/* 3D Graph Background */}
+      {/* Background Layer */}
       <div className="fixed inset-0 z-0">
-        {mounted && dimensions.width > 0 && (
-          <DemoGraph3D width={dimensions.width} height={dimensions.height} />
-        )}
-        
+        {/* Video Background */}
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+        >
+          <source src="/background.mp4" type="video/mp4" />
+        </video>
+
         {/* Gradient overlays for readability */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a12]/60 via-transparent to-[#0a0a12]/80 pointer-events-none" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_20%,_#0a0a12_85%)] pointer-events-none" />
+        <div className="absolute inset-0 z-20 bg-gradient-to-b from-[#0a0a12]/60 via-transparent to-[#0a0a12]/80 pointer-events-none" />
+        <div className="absolute inset-0 z-20 bg-[radial-gradient(ellipse_at_center,_transparent_20%,_#0a0a12_85%)] pointer-events-none" />
       </div>
 
 
@@ -130,7 +120,7 @@ export default function Home() {
 
         <div className="absolute right-8 bottom-32 max-w-[250px] text-left">
           <p className="text-[10px] text-zinc-500 leading-relaxed">
-            Pathfinder is a next-generation networking engine designed to navigate the complexity of professional relationships.
+            Networkify is a next-generation networking engine designed to navigate the complexity of professional relationships.
           </p>
         </div>
 

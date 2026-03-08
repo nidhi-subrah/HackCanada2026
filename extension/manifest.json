@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "LinkedIn PathFinder",
+  "name": "LinkedIn Networkify",
   "version": "1.0.0",
-  "description": "Collects 2nd-degree connections for PathFinder",
+  "description": "Collects 2nd-degree connections for Networkify",
   "permissions": ["activeTab", "storage", "scripting"],
   "host_permissions": ["https://www.linkedin.com/*"],
   "content_scripts": [

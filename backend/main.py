@@ -8,7 +8,7 @@ from config import settings
 
 load_dotenv()
 
-app = FastAPI(title="LinkedIn PathFinder API", version="1.0.0")
+app = FastAPI(title="LinkedIn Networkify API", version="1.0.0")
 
 app.add_middleware(
     SessionMiddleware,

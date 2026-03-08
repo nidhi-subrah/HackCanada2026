@@ -6,7 +6,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        <title>Pathfinder | Find Your Warmest Path to Any Company</title>
+        <title>Networkify | Find Your Warmest Path to Any Company</title>
         <meta name="description" content="Upload your LinkedIn connections and discover hidden referral paths, rank contacts, and craft outreach messages with AI." />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
       </head>
