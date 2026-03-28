@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     auth0_client_id: str
     auth0_client_secret: str
     app_secret_key: str
-    frontend_url: str = "https://frontend-khaki-tau-ihs8fvzka5.vercel.app/"
+    frontend_url: str = "http://localhost:3000"
+    cors_origins: str = '["http://localhost:3000"]'
 
     model_config = SettingsConfigDict(
         env_file=".env",
