@@ -1,8 +1,25 @@
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, Request, HTTPException
+from fastapi.responses import Response
 from db.neo4j_client import db
 from api.routes.auth import get_current_user
+from config import settings
+import httpx
+from urllib.parse import urlparse
 
 router = APIRouter()
+
+
+def _build_logo_proxy_url(request: Request, company_url: str) -> str:
+    if not company_url:
+        return ""
+
+    parsed = urlparse(company_url)
+    domain = parsed.netloc or parsed.path
+    domain = domain.replace("www.", "").strip().lower()
+    if not domain:
+        return ""
+
+    return str(request.url_for("get_company_logo")) + f"?domain={domain}"
 
 
 @router.get("/connections")
@@ -17,7 +34,7 @@ def get_connections(
     user_id = current_user["id"]
     skip = (page - 1) * page_size
 
-    match_clause = "MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)"
+    match_clause = "MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person {owner_user_id: $user_id})"
     where_clauses = []
     params = {"user_id": user_id, "skip": skip, "limit": page_size}
 
@@ -73,7 +90,7 @@ def get_user_companies(current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
     results = db.run("""
 
-        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)-[:WORKS_AT]->(c:Company)
+        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person {owner_user_id: $user_id})-[:WORKS_AT]->(c:Company)
         RETURN DISTINCT c.name as name
         ORDER BY name
     """,
@@ -90,7 +107,7 @@ def get_stats(current_user: dict = Depends(get_current_user)):
     
     person_count = db.run("""
 
-        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)
+        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person {owner_user_id: $user_id})
         RETURN count(p) as count
     """,
         user_id=user_id,
@@ -98,7 +115,7 @@ def get_stats(current_user: dict = Depends(get_current_user)):
 
     company_count = db.run(
         """
-        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)-[:WORKS_AT]->(c:Company)
+        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person {owner_user_id: $user_id})-[:WORKS_AT]->(c:Company)
         RETURN count(DISTINCT c) as count
     """,
         user_id=user_id,
@@ -106,7 +123,7 @@ def get_stats(current_user: dict = Depends(get_current_user)):
 
     recruiter_count = db.run(
         """
-        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)
+        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person {owner_user_id: $user_id})
         WHERE p.is_recruiter = true
         RETURN count(p) as count
     """,
@@ -115,7 +132,7 @@ def get_stats(current_user: dict = Depends(get_current_user)):
 
     top_companies = db.run(
         """
-        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)-[:WORKS_AT]->(c:Company)
+        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person {owner_user_id: $user_id})-[:WORKS_AT]->(c:Company)
         RETURN c.name as company, count(p) as connections
         ORDER BY connections DESC
         LIMIT 5
@@ -132,7 +149,10 @@ def get_stats(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/overview")
-def get_graph_overview(current_user: dict = Depends(get_current_user)):
+def get_graph_overview(
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
     """
     Returns the full graph for the authenticated user's network visualizer.
     
@@ -176,9 +196,10 @@ def get_graph_overview(current_user: dict = Depends(get_current_user)):
         MATCH (root:Person)
         WHERE (root.is_user = true OR root.is_source = true)
           AND coalesce(root.owner_user_id, root.id) = $owner_id
-        WITH collect(root) AS roots
+        WITH collect(root) AS roots, collect(root.id) AS root_ids
         MATCH (r:Person)-[:KNOWS*0..2]-(p:Person)
         WHERE r IN roots
+          AND (p.id IN root_ids OR p.owner_user_id = $owner_id)
         RETURN DISTINCT p
         LIMIT 1000
     """,
@@ -266,7 +287,7 @@ def get_graph_overview(current_user: dict = Depends(get_current_user)):
                         "id": cid,
                         "name": cname,
                         "type": "company",
-                        "logo": company.get("logo", ""),
+                        "logo": _build_logo_proxy_url(request, company.get("url", "")),
                         "url": company.get("url", ""),
                     }
                 )
@@ -321,7 +342,7 @@ def get_company_subgraph(
 
     user_id = current_user["id"]
     result = db.run("""
-        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)-[:WORKS_AT]->(c:Company)
+        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person {owner_user_id: $user_id})-[:WORKS_AT]->(c:Company)
         WHERE toLower(c.name) CONTAINS toLower($company)
         RETURN u, p, c
     """,
@@ -332,18 +353,19 @@ def get_company_subgraph(
 
 
 @router.get("/networks")
-def get_networks(owner_user_id: str = Query(...)):
+def get_networks(current_user: dict = Depends(get_current_user)):
     """
     Returns a list of source networks (primary + imported) for the given owner.
 
     Each network is represented by the root/source Person node.
     """
+    owner_user_id = current_user["id"]
     rows = db.run(
         """
         MATCH (root:Person)
         WHERE (root.is_source = true OR root.is_user = true)
           AND coalesce(root.owner_user_id, root.id) = $owner_user_id
-        OPTIONAL MATCH (root)-[:KNOWS]->(p:Person)
+        OPTIONAL MATCH (root)-[:KNOWS]->(p:Person {owner_user_id: $owner_user_id})
         RETURN root, count(DISTINCT p) AS connections
         ORDER BY root.is_user DESC, root.name ASC
     """,
@@ -365,3 +387,29 @@ def get_networks(owner_user_id: str = Query(...)):
         )
 
     return {"networks": networks}
+
+
+@router.get("/company-logo", name="get_company_logo")
+async def get_company_logo(
+    domain: str = Query(..., min_length=1),
+    current_user: dict = Depends(get_current_user),
+):
+    if not settings.logo_dev_token:
+        raise HTTPException(status_code=404, detail="Company logos are not configured")
+
+    safe_domain = domain.strip().lower()
+    if "/" in safe_domain or "?" in safe_domain or "&" in safe_domain:
+        raise HTTPException(status_code=400, detail="Invalid company domain")
+
+    logo_url = f"https://img.logo.dev/{safe_domain}?token={settings.logo_dev_token}&size=64"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(logo_url)
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=404, detail="Logo not found")
+
+    return Response(
+        content=resp.content,
+        media_type=resp.headers.get("content-type", "image/png"),
+        headers={"Cache-Control": "public, max-age=86400"},
+    )

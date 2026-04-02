@@ -1,8 +1,6 @@
-import base64
-import json
 import secrets
 import httpx
-from fastapi import APIRouter, Request, Depends, HTTPException, Header
+from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from authlib.integrations.starlette_client import OAuth
@@ -31,6 +29,52 @@ oauth.register(
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 7
+ACCESS_COOKIE_NAME = "networkify_access_token"
+REFRESH_COOKIE_NAME = "networkify_refresh_token"
+
+
+def _use_secure_cookies() -> bool:
+    return settings.frontend_url.startswith("https://")
+
+
+def _set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
+    secure = _use_secure_cookies()
+    response.set_cookie(
+        key=ACCESS_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        secure=secure,
+        samesite="none" if secure else "lax",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        httponly=True,
+        secure=secure,
+        samesite="none" if secure else "lax",
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path="/",
+    )
+
+
+def _clear_auth_cookies(response) -> None:
+    secure = _use_secure_cookies()
+    response.delete_cookie(
+        key=ACCESS_COOKIE_NAME,
+        httponly=True,
+        secure=secure,
+        samesite="none" if secure else "lax",
+        path="/",
+    )
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        httponly=True,
+        secure=secure,
+        samesite="none" if secure else "lax",
+        path="/",
+    )
 
 
 def create_access_token(user: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -68,11 +112,14 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 
-def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> dict:
-    if credentials is None:
-        raise HTTPException(status_code=401, detail="Authorization header missing")
-    
-    token = credentials.credentials
+def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> dict:
+    token = credentials.credentials if credentials is not None else request.cookies.get(ACCESS_COOKIE_NAME)
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     payload = decode_token(token)
     
     if payload.get("type") != "access":
@@ -86,12 +133,15 @@ def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depen
     }
 
 
-def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Optional[dict]:
+def get_optional_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> Optional[dict]:
     """For endpoints that work with or without auth"""
-    if credentials is None:
+    if credentials is None and not request.cookies.get(ACCESS_COOKIE_NAME):
         return None
     try:
-        return get_current_user(credentials)
+        return get_current_user(request, credentials)
     except HTTPException:
         return None
 
@@ -167,13 +217,12 @@ async def login_password(request: Request):
             access_token = create_access_token(user)
             refresh_token = create_refresh_token(user)
             
-            return {
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "token_type": "bearer",
+            response = JSONResponse({
+                "user": user,
                 "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-                "user": user
-            }
+            })
+            _set_auth_cookies(response, access_token, refresh_token)
+            return response
             
     except HTTPException:
         raise
@@ -220,14 +269,13 @@ async def signup(request: Request):
             access_token = create_access_token(user)
             refresh_token = create_refresh_token(user)
             
-            return {
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "token_type": "bearer",
-                "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            response = JSONResponse({
                 "user": user,
+                "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
                 "message": "User created successfully"
-            }
+            })
+            _set_auth_cookies(response, access_token, refresh_token)
+            return response
             
     except HTTPException:
         raise
@@ -239,8 +287,7 @@ async def signup(request: Request):
 async def refresh_token(request: Request):
     """Exchange a refresh token for a new access token"""
     try:
-        data = await request.json()
-        refresh_token = data.get("refresh_token")
+        refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
         
         if not refresh_token:
             raise HTTPException(status_code=400, detail="Refresh token required")
@@ -260,12 +307,11 @@ async def refresh_token(request: Request):
         new_access_token = create_access_token(user)
         new_refresh_token = create_refresh_token(user)
         
-        return {
-            "access_token": new_access_token,
-            "refresh_token": new_refresh_token,
-            "token_type": "bearer",
+        response = JSONResponse({
             "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        }
+        })
+        _set_auth_cookies(response, new_access_token, new_refresh_token)
+        return response
         
     except HTTPException:
         raise
@@ -289,10 +335,10 @@ async def auth_callback(request: Request):
     access_token = create_access_token(user)
     refresh_token = create_refresh_token(user)
 
-    user_b64 = base64.urlsafe_b64encode(json.dumps(user).encode()).decode()
-    redirect_url = f"{settings.frontend_url}/auth/callback?access_token={access_token}&refresh_token={refresh_token}&user={user_b64}"
-
-    return RedirectResponse(url=redirect_url)
+    redirect_url = f"{settings.frontend_url.rstrip('/')}/auth/callback"
+    response = RedirectResponse(url=redirect_url)
+    _set_auth_cookies(response, access_token, refresh_token)
+    return response
 
 
 @router.get("/me")
@@ -303,4 +349,6 @@ def me(current_user: dict = Depends(get_current_user)):
 
 @router.post("/logout")
 def logout():
-    return JSONResponse({"message": "Logged out successfully"})
+    response = JSONResponse({"message": "Logged out successfully"})
+    _clear_auth_cookies(response)
+    return response

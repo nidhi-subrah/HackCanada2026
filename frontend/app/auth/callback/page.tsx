@@ -1,49 +1,41 @@
 "use client"
 import { Suspense, useEffect, useRef, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/components/AuthContext"
 import { Loader2, CheckCircle2 } from "lucide-react"
 
 function CallbackHandler() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const { login } = useAuth()
+  const { refreshSession } = useAuth()
   const [status, setStatus] = useState<"processing" | "success" | "error">("processing")
   const [errorMsg, setErrorMsg] = useState("")
   const hasRun = useRef(false)
 
   useEffect(() => {
-    // Guard: only run once
     if (hasRun.current) return
     hasRun.current = true
 
-    const accessToken = searchParams.get("access_token")
-    const refreshToken = searchParams.get("refresh_token")
-    const userB64 = searchParams.get("user")
+    const hydrateAuth = async () => {
+      try {
+        const user = await refreshSession()
+        if (!user) {
+          setStatus("error")
+          setErrorMsg("Missing authentication session. Please try signing in again.")
+          return
+        }
 
-    if (!accessToken || !refreshToken || !userB64) {
-      setStatus("error")
-      setErrorMsg("Missing authentication data. Please try signing in again.")
-      return
+        setStatus("success")
+        setTimeout(() => {
+          router.push("/upload")
+        }, 800)
+      } catch {
+        setStatus("error")
+        setErrorMsg("Failed to process authentication. Please try again.")
+      }
     }
 
-    try {
-      const userJson = atob(userB64.replace(/-/g, "+").replace(/_/g, "/"))
-      const user = JSON.parse(userJson)
-
-      login(accessToken, refreshToken, user)
-      setStatus("success")
-
-      // Redirect after a brief moment
-      setTimeout(() => {
-        router.push("/upload")
-      }, 800)
-    } catch (err) {
-      console.error("Auth callback error:", err)
-      setStatus("error")
-      setErrorMsg("Failed to process authentication. Please try again.")
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    void hydrateAuth()
+  }, [refreshSession, router])
 
   return (
     <div className="min-h-screen bg-[#0a0a12] flex items-center justify-center">

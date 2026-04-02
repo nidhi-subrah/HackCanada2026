@@ -1,10 +1,9 @@
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from services.graph.builder import parse_csv, build_graph, make_id
+from services.graph.builder import parse_csv, build_graph, make_id, make_scoped_id
 from db.neo4j_client import db
 from api.routes.auth import get_current_user
 import asyncio
-from functools import partial
 
 
 router = APIRouter()
@@ -67,11 +66,11 @@ async def upload_csv(
 @router.post("/network")
 async def upload_additional_network(
     file: UploadFile = File(...),
-    owner_user_id: str = "default_id",
     source_name: str = "Imported Network",
     source_title: str = "",
     source_email: str = "",
     network_name: str = "",
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Upload an additional LinkedIn Connections.csv file representing
@@ -83,10 +82,30 @@ async def upload_additional_network(
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files accepted")
 
+    owner_user_id = current_user["id"]
+    owner_rows = db.run(
+        """
+        MATCH (owner:Person {id: $owner_id})
+        WHERE owner.is_user = true
+        RETURN owner
+        LIMIT 1
+        """,
+        owner_id=owner_user_id,
+    )
+    if not owner_rows:
+        raise HTTPException(
+            status_code=400,
+            detail="Upload your own Connections.csv first before adding trusted networks.",
+        )
+
     contents = await file.read()
 
     # Derive a stable id for the source person
-    source_person_id = make_id(source_name or "Imported Network", source_email or "")
+    source_person_id = make_scoped_id(
+        owner_user_id,
+        source_name or "Imported Network",
+        source_email or "",
+    )
 
     # Network label shown in UI
     resolved_network_name = network_name or f"{source_name}'s Network"
@@ -105,7 +124,7 @@ async def upload_additional_network(
             "is_user": False,
             "is_source": True,
             "network_name": resolved_network_name,
-            "owner_user_id": owner_user_id or source_person_id,
+            "owner_user_id": owner_user_id,
         },
     )
 
@@ -148,7 +167,7 @@ async def upload_additional_network(
     return {
         "success": True,
         "source_person_id": source_person_id,
-        "owner_user_id": owner_user_id or source_person_id,
+        "owner_user_id": owner_user_id,
         "stats": stats,
         "message": (
             f"Additional network '{resolved_network_name}' built: "

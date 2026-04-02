@@ -18,26 +18,9 @@ logger = logging.getLogger(__name__)
 # In-process cache for company domain lookups (survives across requests, cleared on restart)
 _company_url_cache: dict[str, str] = {}
 
-LOGO_DEV_TOKEN = settings.logo_dev_token
-
-
 def company_to_logo_url(company_name: str) -> str:
-    """Convert a company name to a logo.dev image URL.
-    Guesses the domain from the company name (e.g. 'Google' -> 'google.com')."""
-    if not company_name:
-        return ""
-
-    # Clean the name: remove Inc, Ltd, Corp, LLC, etc.
-    clean = re.sub(r'\b(inc|ltd|llc|corp|corporation|co|company|group|technologies|tech|software|solutions|labs|limited|plc)\b',
-                   '', company_name, flags=re.IGNORECASE)
-    clean = re.sub(r'[^a-zA-Z0-9\s]', '', clean).strip()
-    # Convert to domain-like slug
-    slug = clean.lower().replace(' ', '')
-    if not slug:
-        return ""
-    domain = f"{slug}.com"
-    url = f"https://img.logo.dev/{domain}?token={LOGO_DEV_TOKEN}&size=64"
-    return url
+    """Logo URLs are proxied server-side so API tokens never reach the browser."""
+    return ""
 
 def company_to_url(company_name: str) -> str:
     """Find the correct url of a company based on its name via Clearbit Autocomplete.
@@ -118,7 +101,12 @@ def make_id(name: str, email: str = "") -> str:
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
 
-def _find_existing_person_id(name: str, email: str, company: str, title: str) -> str | None:
+def make_scoped_id(owner_user_id: str, name: str, email: str = "") -> str:
+    raw = f"{owner_user_id}|{name}|{email}".lower().strip()
+    return hashlib.md5(raw.encode()).hexdigest()[:12]
+
+
+def _find_existing_person_id(owner_user_id: str, name: str, email: str, company: str) -> str | None:
     """
     Try to find an existing Person node that likely represents the same individual.
 
@@ -131,10 +119,12 @@ def _find_existing_person_id(name: str, email: str, company: str, title: str) ->
         rows = db.run(
             """
             MATCH (p:Person)
-            WHERE toLower(p.email) = toLower($email)
+            WHERE p.owner_user_id = $owner_user_id
+              AND toLower(p.email) = toLower($email)
             RETURN p.id AS id
             LIMIT 1
             """,
+            owner_user_id=owner_user_id,
             email=email,
         )
         if rows:
@@ -145,11 +135,13 @@ def _find_existing_person_id(name: str, email: str, company: str, title: str) ->
         rows = db.run(
             """
             MATCH (p:Person)-[:WORKS_AT]->(c:Company)
-            WHERE toLower(p.name) = toLower($name)
+            WHERE p.owner_user_id = $owner_user_id
+              AND toLower(p.name) = toLower($name)
               AND toLower(c.name) = toLower($company)
             RETURN p.id AS id
             LIMIT 1
             """,
+            owner_user_id=owner_user_id,
             name=name,
             company=company,
         )
@@ -219,8 +211,8 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
         profile_url = row.get("URL", "")
 
         # Decide whether to merge with an existing person node
-        existing_id = _find_existing_person_id(name, email, company, title)
-        person_id = existing_id or make_id(name, email)
+        existing_id = _find_existing_person_id(owner_user_id, name, email, company)
+        person_id = existing_id or make_scoped_id(owner_user_id, name, email)
 
         is_recruiter = any(kw in title.lower() for kw in recruiter_keywords)
         initials = row.get("Initials", "")
@@ -237,7 +229,8 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
             "profile_url": profile_url,
             "is_recruiter": is_recruiter,
             "initials": initials,
-            "logo_url": logo_url
+            "logo_url": logo_url,
+            "owner_user_id": owner_user_id,
         })
         
     if not batch:
@@ -245,7 +238,13 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
         
     query = """
         MERGE (u:Person {id: $user_id})
-        SET u.name = $user_name, u.title = $user_title, u.is_user = true, u.initials = $user_initials
+        SET u.name = $user_name,
+            u.title = $user_title,
+            u.is_user = $user_is_user,
+            u.is_source = $user_is_source,
+            u.initials = $user_initials,
+            u.owner_user_id = $owner_user_id,
+            u.network_name = $network_name
         
         WITH u
         UNWIND $batch AS row
@@ -258,7 +257,8 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
             c.connected_on = row.connected_on,
             c.is_recruiter = row.is_recruiter,
             c.degree = 1,
-            c.initials = row.initials
+            c.initials = row.initials,
+            c.owner_user_id = row.owner_user_id
             
         MERGE (u)-[:KNOWS]->(c)
         
@@ -275,6 +275,10 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
         user_name=user["name"],
         user_title=user.get("title", ""),
         user_initials=user_initials,
+        user_is_user=is_user,
+        user_is_source=is_source,
+        owner_user_id=owner_user_id,
+        network_name=network_name,
         batch=batch
     )
     

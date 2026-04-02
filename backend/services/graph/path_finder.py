@@ -20,7 +20,7 @@ def find_paths_to_company(user_id: str, target_company: str) -> dict:
     # Direct connections (1st degree)
     first_degree = db.run(
         """
-        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person)-[:WORKS_AT]->(c:Company)
+        MATCH (u:Person {id: $user_id})-[:KNOWS]->(p:Person {owner_user_id: $user_id})-[:WORKS_AT]->(c:Company)
         WHERE toLower(c.name) CONTAINS toLower($company)
         RETURN p, c, 1 AS degree
     """,
@@ -31,7 +31,7 @@ def find_paths_to_company(user_id: str, target_company: str) -> dict:
     # 2nd degree connections
     second_degree = db.run(
         """
-        MATCH (u:Person {id: $user_id})-[:KNOWS]->(bridge:Person)-[:KNOWS]->(p:Person)-[:WORKS_AT]->(c:Company)
+        MATCH (u:Person {id: $user_id})-[:KNOWS]->(bridge:Person {owner_user_id: $user_id})-[:KNOWS]->(p:Person {owner_user_id: $user_id})-[:WORKS_AT]->(c:Company)
         WHERE toLower(c.name) CONTAINS toLower($company)
           AND NOT (u)-[:KNOWS]->(p)
         RETURN p, c, bridge, 2 AS degree
@@ -43,7 +43,7 @@ def find_paths_to_company(user_id: str, target_company: str) -> dict:
     # 3rd degree connections
     third_degree = db.run(
         """
-        MATCH (u:Person {id: $user_id})-[:KNOWS]->(b1:Person)-[:KNOWS]->(b2:Person)-[:KNOWS]->(p:Person)-[:WORKS_AT]->(c:Company)
+        MATCH (u:Person {id: $user_id})-[:KNOWS]->(b1:Person {owner_user_id: $user_id})-[:KNOWS]->(b2:Person {owner_user_id: $user_id})-[:KNOWS]->(p:Person {owner_user_id: $user_id})-[:WORKS_AT]->(c:Company)
         WHERE toLower(c.name) CONTAINS toLower($company)
           AND NOT (u)-[:KNOWS]->(p)
         RETURN p, c, b1 AS bridge1, b2 AS bridge2, 3 AS degree
@@ -64,7 +64,7 @@ def get_graph_for_company(user_id: str, target_company: str) -> dict:
     """Returns nodes + edges for the graph visualizer for a target company."""
     result = db.run(
         """
-        MATCH path = (u:Person {id: $user_id})-[:KNOWS*1..3]-(p:Person)-[:WORKS_AT]->(c:Company)
+        MATCH path = (u:Person {id: $user_id})-[:KNOWS*1..3]-(p:Person {owner_user_id: $user_id})-[:WORKS_AT]->(c:Company)
         WHERE toLower(c.name) CONTAINS toLower($company)
         RETURN nodes(path) AS nodes, relationships(path) AS rels
         LIMIT 200

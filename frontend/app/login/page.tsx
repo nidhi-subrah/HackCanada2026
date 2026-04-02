@@ -29,10 +29,10 @@ export default function LoginPage() {
       const endpoint = isSignUp ? "/auth/signup" : "/auth/login/password"
       const payload = isSignUp ? { email, password, name } : { email, password }
       
-      const res = await axios.post(`${apiUrl}${endpoint}`, payload)
+      const res = await axios.post(`${apiUrl}${endpoint}`, payload, { withCredentials: true })
       
-      const { access_token, refresh_token, user } = res.data
-      login(access_token, refresh_token, user)
+      const { user } = res.data
+      login(user)
       router.push("/upload")
     } catch (err: any) {
       const rawError = err.response?.data?.detail || err.message || "An unexpected error occurred"
