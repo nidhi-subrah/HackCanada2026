@@ -32,9 +32,12 @@ def company_to_url(company_name: str) -> str:
     if company_name in _company_url_cache:
         return _company_url_cache[company_name]
     
-    REQUEST_URL = f"https://autocomplete.clearbit.com/v1/companies/suggest?query={company_name}"
     try:
-        response = requests.get(REQUEST_URL, timeout=5)
+        response = requests.get(
+            "https://autocomplete.clearbit.com/v1/companies/suggest",
+            params={"query": company_name},
+            timeout=5,
+        )
         response.raise_for_status()
         suggestions = response.json()
         if suggestions:

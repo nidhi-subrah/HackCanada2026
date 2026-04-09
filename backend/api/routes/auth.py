@@ -38,8 +38,13 @@ ACCESS_COOKIE_NAME = "networkify_access_token"
 REFRESH_COOKIE_NAME = "networkify_refresh_token"
 
 
+def _primary_frontend_url() -> str:
+    """Return the first (primary) frontend URL, ignoring any comma-separated extras."""
+    return settings.frontend_url.split(",")[0].strip().rstrip("/")
+
+
 def _use_secure_cookies() -> bool:
-    return settings.frontend_url.startswith("https://")
+    return _primary_frontend_url().startswith("https://")
 
 
 def _set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
@@ -49,7 +54,7 @@ def _set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
         value=access_token,
         httponly=True,
         secure=secure,
-        samesite="none" if secure else "lax",
+        samesite="lax",
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
@@ -58,7 +63,7 @@ def _set_auth_cookies(response, access_token: str, refresh_token: str) -> None:
         value=refresh_token,
         httponly=True,
         secure=secure,
-        samesite="none" if secure else "lax",
+        samesite="lax",
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         path="/",
     )
@@ -70,14 +75,14 @@ def _clear_auth_cookies(response) -> None:
         key=ACCESS_COOKIE_NAME,
         httponly=True,
         secure=secure,
-        samesite="none" if secure else "lax",
+        samesite="lax",
         path="/",
     )
     response.delete_cookie(
         key=REFRESH_COOKIE_NAME,
         httponly=True,
         secure=secure,
-        samesite="none" if secure else "lax",
+        samesite="lax",
         path="/",
     )
 
@@ -111,7 +116,12 @@ def create_refresh_token(user: dict) -> str:
 
 def decode_token(token: str) -> dict:
     try:
-        payload = jwt.decode(token, settings.app_secret_key, algorithms=["HS256"])
+        payload = jwt.decode(
+            token,
+            settings.app_secret_key,
+            algorithms=["HS256"],
+            options={"require": ["exp", "iat", "sub", "type"]},
+        )
         return payload
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -215,7 +225,7 @@ async def auth_callback(request: Request):
     access_token = create_access_token(user)
     refresh_token = create_refresh_token(user)
 
-    redirect_url = f"{settings.frontend_url.rstrip('/')}/auth/callback"
+    redirect_url = f"{_primary_frontend_url()}/auth/callback"
     response = RedirectResponse(url=redirect_url)
     _set_auth_cookies(response, access_token, refresh_token)
     return response

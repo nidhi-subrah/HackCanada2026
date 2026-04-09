@@ -13,7 +13,8 @@ from config import settings
 load_dotenv()
 
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(title="LinkedIn Networkify API", version="1.0.0")
+_docs_url = None if not settings.frontend_url.startswith("http://localhost") else "/docs"
+app = FastAPI(title="LinkedIn Networkify API", version="1.0.0", docs_url=_docs_url, redoc_url=None)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

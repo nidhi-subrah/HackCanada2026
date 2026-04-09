@@ -34,12 +34,9 @@ function clearStoredUser() {
   localStorage.removeItem("auth_user")
   localStorage.removeItem("user_id")
   localStorage.removeItem("user_name")
-}
-
-function persistUser(user: User) {
-  localStorage.setItem("auth_user", JSON.stringify(user))
-  localStorage.setItem("user_id", user.id)
-  localStorage.setItem("user_name", user.name)
+  localStorage.removeItem("access_token")
+  localStorage.removeItem("refresh_token")
+  localStorage.removeItem("user")
 }
 
 async function fetchCurrentUser(): Promise<User | null> {
@@ -63,7 +60,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const currentUser = await fetchCurrentUser()
       if (currentUser) {
-        persistUser(currentUser)
         setUser(currentUser)
         return currentUser
       }
@@ -74,7 +70,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true })
           const refreshedUser = await fetchCurrentUser()
           if (refreshedUser) {
-            persistUser(refreshedUser)
             setUser(refreshedUser)
             return refreshedUser
           }
@@ -94,15 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("auth_user")
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser))
-      } catch {
-        clearStoredUser()
-      }
-    }
-
+    clearStoredUser()
     void refreshSession().finally(() => {
       setIsLoading(false)
     })

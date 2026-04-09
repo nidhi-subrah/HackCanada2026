@@ -11,10 +11,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class PersonInfo(BaseModel):
+    name: str = Field(..., max_length=200)
+    title: str = Field("", max_length=500)
+    degree: int = Field(1, ge=1, le=3)
+    is_recruiter: bool = False
+
+
 class MessageRequest(BaseModel):
-    target_person: dict
-    target_company: str
-    bridge_person: dict | None = None
+    target_person: PersonInfo
+    target_company: str = Field(..., max_length=200)
+    bridge_person: PersonInfo | None = None
 
 
 class MessageLogRequest(BaseModel):
