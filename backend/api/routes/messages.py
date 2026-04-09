@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
-from services.ai.message_generator import generate_outreach_message
+from services.messaging.message_generator import generate_outreach_message
 from db.neo4j_client import db
 from api.routes.auth import get_current_user
 
