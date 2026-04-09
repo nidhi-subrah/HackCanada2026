@@ -103,6 +103,7 @@ export default function Dashboard() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showUI, setShowUI] = useState(true)
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const graphContainerRef = useRef<HTMLDivElement | null>(null)
 
   // Handle Escape key to exit fullscreen
   useEffect(() => {
@@ -113,6 +114,30 @@ export default function Dashboard() {
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isFullscreen])
+
+  // Track the actual graph container size so the canvas always matches it.
+  // This fixes fullscreen: without this, dimensions were hardcoded to 800x600
+  // and toggling fullscreen never resized the underlying canvas.
+  useEffect(() => {
+    const el = graphContainerRef.current
+    if (!el) return
+
+    const update = () => {
+      setDimensions({
+        width: el.clientWidth || window.innerWidth,
+        height: el.clientHeight || window.innerHeight,
+      })
+    }
+    update()
+
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    window.addEventListener("resize", update)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener("resize", update)
+    }
   }, [isFullscreen])
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const unsavedSecondsRef = useRef(0)
@@ -385,10 +410,12 @@ export default function Dashboard() {
           )}
 
           {/* Graph Section */}
-          <div className={`${
-            isFullscreen 
-              ? "fixed inset-0 z-50 bg-dark-bg" 
-              : "col-span-12 lg:col-span-7 bg-gradient-to-br from-brand-600/40 via-brand-500/30 to-accent-cyan/20 rounded-3xl p-8 min-h-[360px]"
+          <div
+            ref={graphContainerRef}
+            className={`${
+              isFullscreen
+                ? "fixed inset-0 z-50 bg-dark-bg"
+                : "col-span-12 lg:col-span-7 bg-gradient-to-br from-brand-600/40 via-brand-500/30 to-accent-cyan/20 rounded-3xl p-8 min-h-[360px]"
             } relative overflow-hidden group transition-all duration-300`}
           >
               <div className="absolute top-4 right-4 z-[60] flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -413,9 +440,9 @@ export default function Dashboard() {
                 )}
               </div>
 
-              <Graph 
-                width={isFullscreen ? (typeof window !== 'undefined' ? window.innerWidth : 1200) : dimensions.width} 
-                height={isFullscreen ? (typeof window !== 'undefined' ? window.innerHeight : 800) : dimensions.height} 
+              <Graph
+                width={dimensions.width}
+                height={dimensions.height}
               />
             </div>
 

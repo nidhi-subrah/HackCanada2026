@@ -1,11 +1,15 @@
 
+import asyncio
+import logging
+import time
+
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from services.graph.builder import parse_csv, build_graph, make_id, make_scoped_id
 from db.neo4j_client import db
 from api.routes.auth import get_current_user
-import asyncio
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -43,21 +47,46 @@ async def upload_csv(
     # If the client passes an empty or placeholder id, derive one from the name.
     effective_user_id = user_id or make_id(user_name or "Me")
 
-    # Offload blocking I/O (HTTP lookups + Neo4j writes) to a thread pool
-    loop = asyncio.get_running_loop()
-    stats = await loop.run_in_executor(
-        None,
-        _parse_and_build,
-        contents,
-        {
-            "id": effective_user_id,
-            "name": user_name,
-            "title": user_title,
-            "is_user": True,
-            "is_source": True,
-            "network_name": "Primary Network",
-            "owner_user_id": effective_user_id,
-        },
+    logger.info(
+        "upload_csv: start user=%s size=%dB filename=%s",
+        effective_user_id,
+        len(contents),
+        file.filename,
+    )
+    t0 = time.monotonic()
+
+    try:
+        # Offload blocking I/O (HTTP lookups + Neo4j writes) to a thread pool
+        loop = asyncio.get_running_loop()
+        stats = await loop.run_in_executor(
+            None,
+            _parse_and_build,
+            contents,
+            {
+                "id": effective_user_id,
+                "name": user_name,
+                "title": user_title,
+                "is_user": True,
+                "is_source": True,
+                "network_name": "Primary Network",
+                "owner_user_id": effective_user_id,
+            },
+        )
+    except Exception as exc:
+        logger.exception(
+            "upload_csv: failed after %.2fs user=%s: %s",
+            time.monotonic() - t0,
+            effective_user_id,
+            exc,
+        )
+        raise HTTPException(status_code=500, detail=f"Upload processing failed: {exc}") from exc
+
+    logger.info(
+        "upload_csv: done in %.2fs user=%s persons=%d companies=%d",
+        time.monotonic() - t0,
+        effective_user_id,
+        stats.get("persons", 0),
+        stats.get("companies", 0),
     )
 
     return {

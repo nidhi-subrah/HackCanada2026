@@ -654,7 +654,7 @@ export default function Graph({ width, height, initialZoom, default3D = false, a
       )}
 
       {/* 2D/3D Toggle */}
-      <div className="absolute top-4 right-32 z-10 flex rounded-xl overflow-hidden border border-dark-glassBorder bg-dark-bg/90 backdrop-blur-md">
+      <div className="absolute top-4 left-4 z-10 flex rounded-xl overflow-hidden border border-dark-glassBorder bg-dark-bg/90 backdrop-blur-md">
         <button
           onClick={() => {
             if (is3D) {

@@ -36,7 +36,7 @@ def company_to_url(company_name: str) -> str:
         response = requests.get(
             "https://autocomplete.clearbit.com/v1/companies/suggest",
             params={"query": company_name},
-            timeout=5,
+            timeout=2,  # keep tight — this is on the upload hot path
         )
         response.raise_for_status()
         suggestions = response.json()
@@ -47,7 +47,7 @@ def company_to_url(company_name: str) -> str:
             return url
     except requests.RequestException as e:
         logger.warning("Error fetching company URL for '%s': %s", company_name, e)
-    
+
     _company_url_cache[company_name] = ""
     return ""
 
@@ -84,19 +84,28 @@ def _resolve_company_urls_batch(company_names: list[str], max_workers: int = 10)
 
 def parse_csv(file_bytes: bytes) -> pd.DataFrame:
     import io
+    import time
+    t0 = time.monotonic()
     # LinkedIn CSVs have a 3-line header — skip it
     df = pd.read_csv(io.BytesIO(file_bytes), skiprows=3)
     df.columns = df.columns.str.strip()
     df = df.fillna("")
-    
+
     # User-defined fields
     df["Initials"] = df["First Name"].str[0] + df["Last Name"].str[0]
+    logger.info("parse_csv: parsed %d rows in %.2fs", len(df), time.monotonic() - t0)
 
     # Deduplicate company names and resolve URLs in parallel
     unique_companies = df["Company"].dropna().unique().tolist()
+    t0 = time.monotonic()
     url_map = _resolve_company_urls_batch(unique_companies)
     df["CompanyURL"] = df["Company"].map(url_map).fillna("")
-    
+    logger.info(
+        "parse_csv: resolved %d company URLs in %.2fs",
+        len(unique_companies),
+        time.monotonic() - t0,
+    )
+
     return df
 
 def make_id(name: str, email: str = "") -> str:
@@ -109,48 +118,50 @@ def make_scoped_id(owner_user_id: str, name: str, email: str = "") -> str:
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
 
-def _find_existing_person_id(owner_user_id: str, name: str, email: str, company: str) -> str | None:
+def _load_existing_person_index(owner_user_id: str) -> dict:
     """
-    Try to find an existing Person node that likely represents the same individual.
+    Preload every Person already stored for this owner so that per-row dedup
+    lookups during a bulk upload become O(1) dict lookups instead of 2 Neo4j
+    round-trips per row. A LinkedIn CSV with 2,000 connections previously
+    issued up to 4,000 queries; now it issues a single query.
+    """
+    rows = db.run(
+        """
+        MATCH (p:Person)
+        WHERE p.owner_user_id = $owner_user_id
+        OPTIONAL MATCH (p)-[:WORKS_AT]->(c:Company)
+        RETURN p.id AS id,
+               toLower(coalesce(p.email, '')) AS email,
+               toLower(coalesce(p.name, '')) AS name,
+               toLower(coalesce(c.name, '')) AS company
+        """,
+        owner_user_id=owner_user_id,
+    )
 
-    Matching strategy (high-confidence only):
-      1. Exact email match.
-      2. Exact normalized name + company match.
-    """
-    # 1. Email match (highest confidence)
+    by_email: dict[str, str] = {}
+    by_name_company: dict[tuple[str, str], str] = {}
+    for row in rows:
+        pid = row["id"]
+        if row["email"]:
+            by_email.setdefault(row["email"], pid)
+        if row["name"] and row["company"]:
+            by_name_company.setdefault((row["name"], row["company"]), pid)
+
+    return {"by_email": by_email, "by_name_company": by_name_company}
+
+
+def _lookup_existing_id(
+    index: dict, name: str, email: str, company: str
+) -> str | None:
+    """In-memory lookup against the preloaded index."""
     if email:
-        rows = db.run(
-            """
-            MATCH (p:Person)
-            WHERE p.owner_user_id = $owner_user_id
-              AND toLower(p.email) = toLower($email)
-            RETURN p.id AS id
-            LIMIT 1
-            """,
-            owner_user_id=owner_user_id,
-            email=email,
-        )
-        if rows:
-            return rows[0]["id"]
-
-    # 2. Name + company match (still high confidence)
+        match = index["by_email"].get(email.lower())
+        if match:
+            return match
     if name and company:
-        rows = db.run(
-            """
-            MATCH (p:Person)-[:WORKS_AT]->(c:Company)
-            WHERE p.owner_user_id = $owner_user_id
-              AND toLower(p.name) = toLower($name)
-              AND toLower(c.name) = toLower($company)
-            RETURN p.id AS id
-            LIMIT 1
-            """,
-            owner_user_id=owner_user_id,
-            name=name,
-            company=company,
-        )
-        if rows:
-            return rows[0]["id"]
-
+        match = index["by_name_company"].get((name.lower(), company.lower()))
+        if match:
+            return match
     return None
 
 
@@ -164,6 +175,7 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
       (connection)-[:WORKS_AT]->(company)
       (you)-[:WORKS_AT]->(your_companies)
     """
+    import time
     stats = {"persons": 0, "companies": 0, "relationships": 0}
 
     # Create the root/source person node for this CSV
@@ -176,6 +188,7 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
     network_name = user.get("network_name") or ("Primary Network" if is_user else "Imported Network")
     owner_user_id = user.get("owner_user_id") or user_id
 
+    t0 = time.monotonic()
     db.run_write(
         """
         MERGE (p:Person {id: $id})
@@ -196,11 +209,22 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
         owner_user_id=owner_user_id,
         network_name=network_name,
     )
+    logger.info("build_graph: owner upsert in %.2fs", time.monotonic() - t0)
+
+    # Load the owner's existing persons in a single query so per-row dedup
+    # lookups are in-memory instead of 2 round-trips per row.
+    t0 = time.monotonic()
+    person_index = _load_existing_person_index(owner_user_id)
+    logger.info(
+        "build_graph: preloaded %d existing persons in %.2fs",
+        len(person_index["by_email"]) + len(person_index["by_name_company"]),
+        time.monotonic() - t0,
+    )
 
     recruiter_keywords = ["recruiter", "talent acquisition", "hiring", "hr", "people ops", "talent partner"]
-    
-    batch = []
 
+    batch = []
+    t0 = time.monotonic()
     for _, row in df.iterrows():
         name = f"{row.get('First Name', '')} {row.get('Last Name', '')}".strip()
         if not name:
@@ -213,8 +237,8 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
         connected_on = row.get("Connected On", "")
         profile_url = row.get("URL", "")
 
-        # Decide whether to merge with an existing person node
-        existing_id = _find_existing_person_id(owner_user_id, name, email, company)
+        # In-memory dedup against preloaded index
+        existing_id = _lookup_existing_id(person_index, name, email, company)
         person_id = existing_id or make_scoped_id(owner_user_id, name, email)
 
         is_recruiter = any(kw in title.lower() for kw in recruiter_keywords)
@@ -235,10 +259,11 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
             "logo_url": logo_url,
             "owner_user_id": owner_user_id,
         })
-        
+    logger.info("build_graph: built %d-row batch in %.2fs", len(batch), time.monotonic() - t0)
+
     if not batch:
         return stats
-        
+
     query = """
         MERGE (u:Person {id: $user_id})
         SET u.name = $user_name,
@@ -248,10 +273,10 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
             u.initials = $user_initials,
             u.owner_user_id = $owner_user_id,
             u.network_name = $network_name
-        
+
         WITH u
         UNWIND $batch AS row
-        
+
         MERGE (c:Person {id: row.person_id})
         SET c.name = row.name,
             c.title = row.title,
@@ -262,9 +287,9 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
             c.degree = 1,
             c.initials = row.initials,
             c.owner_user_id = row.owner_user_id
-            
+
         MERGE (u)-[:KNOWS]->(c)
-        
+
         FOREACH (_ IN CASE WHEN row.company <> "" THEN [1] ELSE [] END |
             MERGE (comp:Company {name: row.company})
             SET comp.logo = row.logo_url,
@@ -273,20 +298,34 @@ def build_graph(df: pd.DataFrame, user: dict) -> dict:
         )
     """
 
-    db.run_write(query, 
-        user_id=user_id,
-        user_name=user["name"],
-        user_title=user.get("title", ""),
-        user_initials=user_initials,
-        user_is_user=is_user,
-        user_is_source=is_source,
-        owner_user_id=owner_user_id,
-        network_name=network_name,
-        batch=batch
-    )
-    
+    # Chunk the write so a single huge batch doesn't blow up transaction
+    # memory on AuraDB or hit the Bolt frame size limit.
+    CHUNK_SIZE = 500
+    t0 = time.monotonic()
+    for i in range(0, len(batch), CHUNK_SIZE):
+        chunk = batch[i : i + CHUNK_SIZE]
+        db.run_write(
+            query,
+            user_id=user_id,
+            user_name=user["name"],
+            user_title=user.get("title", ""),
+            user_initials=user_initials,
+            user_is_user=is_user,
+            user_is_source=is_source,
+            owner_user_id=owner_user_id,
+            network_name=network_name,
+            batch=chunk,
+        )
+        logger.info(
+            "build_graph: wrote chunk %d-%d of %d",
+            i + 1,
+            i + len(chunk),
+            len(batch),
+        )
+    logger.info("build_graph: neo4j writes done in %.2fs", time.monotonic() - t0)
+
     stats["persons"] = len(batch)
-    stats["relationships"] = len(batch) * 2 # approximation
+    stats["relationships"] = len(batch) * 2  # approximation
     stats["companies"] = len(set([b["company"] for b in batch if b["company"]]))
 
     return stats

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,8 +11,16 @@ from dotenv import load_dotenv
 
 from api.routes import upload, search, graph, enrich, messages, auth
 from config import settings
+from db.constraints import setup_schema
+from db.neo4j_client import db
 
 load_dotenv()
+
+# Make sure logger.info() calls in services/ show up in Railway logs.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 limiter = Limiter(key_func=get_remote_address)
 _docs_url = None if not settings.frontend_url.startswith("http://localhost") else "/docs"
@@ -39,6 +49,17 @@ app.include_router(graph.router,    prefix="/api/graph",    tags=["Graph"])
 app.include_router(enrich.router,   prefix="/api/enrich",   tags=["Enrich"])
 app.include_router(messages.router, prefix="/api/messages", tags=["Messages"])
 app.include_router(auth.router)
+
+@app.on_event("startup")
+def _on_startup():
+    """Ensure indexes/constraints exist so per-owner queries aren't full scans."""
+    try:
+        if db.verify_connectivity():
+            setup_schema()
+            logging.getLogger(__name__).info("Neo4j schema verified")
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Schema setup failed: %s", exc)
+
 
 @app.get("/health")
 def health():
