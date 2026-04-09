@@ -4,15 +4,16 @@ const nextConfig = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
   },
   async rewrites() {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    // BACKEND_URL must point directly to Railway — never to the same Vercel domain
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000'
     return [
       {
         source: '/api/:path*',
-        destination: `${apiUrl}/api/:path*`,
+        destination: `${backendUrl}/api/:path*`,
       },
       {
         source: '/auth/:path*',
-        destination: `${apiUrl}/auth/:path*`,
+        destination: `${backendUrl}/auth/:path*`,
       },
     ]
   },

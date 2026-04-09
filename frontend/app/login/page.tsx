@@ -59,9 +59,9 @@ export default function LoginPage() {
 
         <p className="mt-8 text-center text-xs text-zinc-600">
           By signing in you agree to our{" "}
-          <span className="text-zinc-400 hover:text-white cursor-pointer transition-colors">Terms</span>
+          <Link href="/terms" className="text-zinc-400 hover:text-white transition-colors">Terms</Link>
           {" & "}
-          <span className="text-zinc-400 hover:text-white cursor-pointer transition-colors">Privacy Policy</span>
+          <Link href="/privacy" className="text-zinc-400 hover:text-white transition-colors">Privacy Policy</Link>
         </p>
       </div>
     </div>
