@@ -392,7 +392,6 @@ def get_networks(current_user: dict = Depends(get_current_user)):
 @router.get("/company-logo", name="get_company_logo")
 async def get_company_logo(
     domain: str = Query(..., min_length=1),
-    current_user: dict = Depends(get_current_user),
 ):
     if not settings.logo_dev_token:
         raise HTTPException(status_code=404, detail="Company logos are not configured")

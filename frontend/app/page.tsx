@@ -1,7 +1,7 @@
 "use client"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowRight, Waypoints, Network, Users, Home, Upload, Search } from "lucide-react"
+import { ArrowRight, Waypoints, Network, Users, Home as HomeIcon, Upload, Search } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useAuth } from "@/components/AuthContext"
 
@@ -139,7 +139,7 @@ export default function Home() {
       <div className="relative z-10 border-t border-zinc-800/50 py-6">
         <div className="max-w-4xl mx-auto flex items-center justify-center gap-4 flex-wrap px-6">
           {[
-            { icon: Home, label: "Dashboard", href: "/dashboard" },
+            { icon: HomeIcon, label: "Dashboard", href: "/dashboard" },
             { icon: Upload, label: "Upload", href: "/upload" },
             { icon: Search, label: "Search", href: "/search" },
             { icon: Users, label: "Connections", href: "/connections" },
