@@ -3,7 +3,9 @@ import Link from "next/link"
 import { Waypoints } from "lucide-react"
 
 export default function LoginPage() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL
+  // Use a same-origin URL so the Vercel rewrite proxies /auth/login to
+  // Railway, keeping the session cookie on networkify.live.
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || ""
 
   return (
     <div className="min-h-screen bg-[#0a0a12] relative overflow-hidden flex items-center justify-center">

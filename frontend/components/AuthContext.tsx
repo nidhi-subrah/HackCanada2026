@@ -28,7 +28,9 @@ const AuthContext = createContext<AuthContextType>({
   refreshSession: async () => null,
 })
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL
+// Empty string → relative URLs → Vercel rewrite proxies to Railway.
+// This keeps cookies same-origin on networkify.live.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || ""
 
 function clearStoredUser() {
   localStorage.removeItem("auth_user")
