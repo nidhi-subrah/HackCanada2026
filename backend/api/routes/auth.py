@@ -225,7 +225,9 @@ async def auth_callback(request: Request):
     access_token = create_access_token(user)
     refresh_token = create_refresh_token(user)
 
-    redirect_url = f"{_primary_frontend_url()}/auth/callback"
+    # Redirect to /dashboard (not /auth/callback) to avoid the Vercel rewrite
+    # for /auth/:path* looping back to this handler with no code/state params.
+    redirect_url = f"{_primary_frontend_url()}/dashboard"
     response = RedirectResponse(url=redirect_url)
     _set_auth_cookies(response, access_token, refresh_token)
     return response
