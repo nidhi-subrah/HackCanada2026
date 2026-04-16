@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-  Waypoints, ArrowUpRight, Zap, Droplets, ChevronLeft, ChevronRight, Maximize2, X
+  ArrowUpRight, Zap, Droplets, ChevronLeft, ChevronRight
 } from "lucide-react"
 import Sidebar from "@/components/Sidebar"
 import Graph from "@/components/graph/Graph"
@@ -100,20 +100,41 @@ export default function Dashboard() {
   const [weeklyData, setWeeklyData] = useState<{ day: string; height: number; isActive?: boolean }[]>(
     ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => ({ day: d, height: 0 }))
   )
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [showUI, setShowUI] = useState(true)
   const activeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const graphContainerRef = useRef<HTMLDivElement | null>(null)
 
-  // Handle Escape key to exit fullscreen
+  // Track the actual graph container size so the canvas always matches it.
+  // This fixes fullscreen: without this, dimensions were hardcoded to 800x600
+  // and toggling fullscreen never resized the underlying canvas.
+  // NOTE: The <Graph> is placed in an absolutely-positioned wrapper below, so
+  // its canvas does NOT contribute to the container's intrinsic height. That
+  // breaks the resize-feedback loop that previously caused the map/calendar
+  // row to keep extending every frame.
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isFullscreen) {
-        setIsFullscreen(false)
-      }
+    const el = graphContainerRef.current
+    if (!el) return
+
+    const update = () => {
+      const w = el.clientWidth || window.innerWidth
+      const h = el.clientHeight || window.innerHeight
+      setDimensions(prev => {
+        // Ignore sub-pixel / 1px jitter to avoid any residual re-render loops.
+        if (Math.abs(prev.width - w) < 2 && Math.abs(prev.height - h) < 2) {
+          return prev
+        }
+        return { width: w, height: h }
+      })
     }
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [isFullscreen])
+    update()
+
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    window.addEventListener("resize", update)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener("resize", update)
+    }
+  }, [])
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const unsavedSecondsRef = useRef(0)
   const initialLoadDone = useRef(false)
@@ -278,24 +299,13 @@ export default function Dashboard() {
 
 
   return (
-    <div className={`flex h-screen bg-dark-bg overflow-hidden ${isFullscreen ? "p-0" : ""}`}>
-      {showUI && !isFullscreen && <Sidebar />}
+    <div className="flex h-screen bg-dark-bg overflow-hidden">
+      <Sidebar />
 
-      <main className={`flex-1 overflow-auto transition-all duration-300 ${isFullscreen ? "p-0" : "p-6"}`}>
-        {/* Reveal UI Button */}
-        {!showUI && !isFullscreen && (
-          <button
-            onClick={() => setShowUI(true)}
-            className="fixed top-4 right-4 z-[100] px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium shadow-lg transition-all"
-          >
-            Reveal UI
-          </button>
-        )}
-
-        <div className={`${isFullscreen ? "w-full h-full" : "max-w-7xl mx-auto"} grid grid-cols-12 gap-4 auto-rows-min h-full`}>
+      <main className="flex-1 overflow-auto p-6 pb-20 md:pb-6">
+        <div className="max-w-7xl mx-auto grid grid-cols-12 gap-4 auto-rows-min h-full">
          
-          {showUI && !isFullscreen && (
-            <div className="col-span-12 lg:col-span-5 bg-dark-surface rounded-3xl p-6">
+          <div className="col-span-12 lg:col-span-5 bg-dark-surface rounded-3xl p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold text-white">Network Activity</h2>
               <button className="w-8 h-8 rounded-lg bg-dark-elevated flex items-center justify-center text-zinc-400 hover:text-white transition-colors">
@@ -382,46 +392,28 @@ export default function Dashboard() {
               </div>
             </div>
             </div>
-          )}
 
           {/* Graph Section */}
-          <div className={`${
-            isFullscreen 
-              ? "fixed inset-0 z-50 bg-dark-bg" 
-              : "col-span-12 lg:col-span-7 bg-gradient-to-br from-brand-600/40 via-brand-500/30 to-accent-cyan/20 rounded-3xl p-8 min-h-[360px]"
-            } relative overflow-hidden group transition-all duration-300`}
+          <div
+            ref={graphContainerRef}
+            className="col-span-12 lg:col-span-7 bg-gradient-to-br from-brand-600/40 via-brand-500/30 to-accent-cyan/20 rounded-3xl p-8 min-h-[360px] relative overflow-hidden"
           >
-              <div className="absolute top-4 right-4 z-[60] flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                {/* Fullscreen Toggle */}
-                <button 
-                  onClick={() => setIsFullscreen(!isFullscreen)}
-                  className="w-10 h-10 rounded-xl bg-dark-bg/80 backdrop-blur-md border border-dark-glassBorder flex items-center justify-center text-zinc-400 hover:text-white hover:bg-dark-surface transition-all"
-                  title={isFullscreen ? "Exit Fullscreen" : "Fullscreen Graph"}
-                >
-                  {isFullscreen ? <X className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
-                </button>
-
-                {/* Hide UI Toggle (only visible when not in actual OS fullscreen, but we use it as a 'Zen' mode) */}
-                {!isFullscreen && (
-                  <button 
-                    onClick={() => setShowUI(false)}
-                    className="w-10 h-10 rounded-xl bg-dark-bg/80 backdrop-blur-md border border-dark-glassBorder flex items-center justify-center text-zinc-400 hover:text-white hover:bg-dark-surface transition-all"
-                    title="Hide UI"
-                  >
-                    <Zap className="w-5 h-5" />
-                  </button>
-                )}
+              {/*
+                Absolutely position the graph so its canvas does not
+                contribute to the container's flow height. Without this, the
+                ResizeObserver above would feed the canvas size back into the
+                container's clientHeight, causing the row (and the calendar
+                alongside it) to keep extending.
+              */}
+              <div className="absolute inset-8">
+                <Graph
+                  width={dimensions.width}
+                  height={dimensions.height}
+                />
               </div>
-
-              <Graph 
-                width={isFullscreen ? (typeof window !== 'undefined' ? window.innerWidth : 1200) : dimensions.width} 
-                height={isFullscreen ? (typeof window !== 'undefined' ? window.innerHeight : 800) : dimensions.height} 
-              />
             </div>
 
-          {showUI && !isFullscreen && (
-            <>
-              <div className="col-span-12 lg:col-span-5 space-y-4">
+          <div className="col-span-12 lg:col-span-5 space-y-4">
             <MetricBar
               icon={<Droplets className="w-5 h-5 text-accent-cyan" />}
               label="Connections"
@@ -468,8 +460,6 @@ export default function Dashboard() {
               color="bg-accent-amber/20"
             />
           </div>
-        </>
-      )}
 
         </div>
       </main>

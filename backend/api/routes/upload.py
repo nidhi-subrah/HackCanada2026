@@ -1,12 +1,15 @@
 
+import asyncio
+import logging
+import time
+
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from services.graph.builder import parse_csv, build_graph, make_id
+from services.graph.builder import parse_csv, build_graph, make_id, make_scoped_id
 from db.neo4j_client import db
 from api.routes.auth import get_current_user
-import asyncio
-from functools import partial
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -29,31 +32,61 @@ async def upload_csv(
     """
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files accepted")
+    if file.content_type not in ("text/csv", "application/csv", "application/octet-stream", "text/plain"):
+        raise HTTPException(status_code=400, detail="Invalid file type")
 
     user_id = current_user["id"]
     user_name = current_user["name"] or current_user["email"].split("@")[0]
 
+    MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
     contents = await file.read()
+    if len(contents) > MAX_CSV_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
 
     # Ensure we have a stable user_id that matches the graph's Person node
     # If the client passes an empty or placeholder id, derive one from the name.
     effective_user_id = user_id or make_id(user_name or "Me")
 
-    # Offload blocking I/O (HTTP lookups + Neo4j writes) to a thread pool
-    loop = asyncio.get_running_loop()
-    stats = await loop.run_in_executor(
-        None,
-        _parse_and_build,
-        contents,
-        {
-            "id": effective_user_id,
-            "name": user_name,
-            "title": user_title,
-            "is_user": True,
-            "is_source": True,
-            "network_name": "Primary Network",
-            "owner_user_id": effective_user_id,
-        },
+    logger.info(
+        "upload_csv: start user=%s size=%dB filename=%s",
+        effective_user_id,
+        len(contents),
+        file.filename,
+    )
+    t0 = time.monotonic()
+
+    try:
+        # Offload blocking I/O (HTTP lookups + Neo4j writes) to a thread pool
+        loop = asyncio.get_running_loop()
+        stats = await loop.run_in_executor(
+            None,
+            _parse_and_build,
+            contents,
+            {
+                "id": effective_user_id,
+                "name": user_name,
+                "title": user_title,
+                "is_user": True,
+                "is_source": True,
+                "network_name": "Primary Network",
+                "owner_user_id": effective_user_id,
+            },
+        )
+    except Exception as exc:
+        logger.exception(
+            "upload_csv: failed after %.2fs user=%s: %s",
+            time.monotonic() - t0,
+            effective_user_id,
+            exc,
+        )
+        raise HTTPException(status_code=500, detail=f"Upload processing failed: {exc}") from exc
+
+    logger.info(
+        "upload_csv: done in %.2fs user=%s persons=%d companies=%d",
+        time.monotonic() - t0,
+        effective_user_id,
+        stats.get("persons", 0),
+        stats.get("companies", 0),
     )
 
     return {
@@ -67,11 +100,11 @@ async def upload_csv(
 @router.post("/network")
 async def upload_additional_network(
     file: UploadFile = File(...),
-    owner_user_id: str = "default_id",
     source_name: str = "Imported Network",
     source_title: str = "",
     source_email: str = "",
     network_name: str = "",
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Upload an additional LinkedIn Connections.csv file representing
@@ -82,11 +115,36 @@ async def upload_additional_network(
     """
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files accepted")
+    if file.content_type not in ("text/csv", "application/csv", "application/octet-stream", "text/plain"):
+        raise HTTPException(status_code=400, detail="Invalid file type")
 
+    owner_user_id = current_user["id"]
+    owner_rows = db.run(
+        """
+        MATCH (owner:Person {id: $owner_id})
+        WHERE owner.is_user = true
+        RETURN owner
+        LIMIT 1
+        """,
+        owner_id=owner_user_id,
+    )
+    if not owner_rows:
+        raise HTTPException(
+            status_code=400,
+            detail="Upload your own Connections.csv first before adding trusted networks.",
+        )
+
+    MAX_CSV_BYTES = 10 * 1024 * 1024  # 10 MB
     contents = await file.read()
+    if len(contents) > MAX_CSV_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
 
     # Derive a stable id for the source person
-    source_person_id = make_id(source_name or "Imported Network", source_email or "")
+    source_person_id = make_scoped_id(
+        owner_user_id,
+        source_name or "Imported Network",
+        source_email or "",
+    )
 
     # Network label shown in UI
     resolved_network_name = network_name or f"{source_name}'s Network"
@@ -105,7 +163,7 @@ async def upload_additional_network(
             "is_user": False,
             "is_source": True,
             "network_name": resolved_network_name,
-            "owner_user_id": owner_user_id or source_person_id,
+            "owner_user_id": owner_user_id,
         },
     )
 
@@ -148,7 +206,7 @@ async def upload_additional_network(
     return {
         "success": True,
         "source_person_id": source_person_id,
-        "owner_user_id": owner_user_id or source_person_id,
+        "owner_user_id": owner_user_id,
         "stats": stats,
         "message": (
             f"Additional network '{resolved_network_name}' built: "

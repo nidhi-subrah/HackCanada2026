@@ -1,17 +1,27 @@
+import logging
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime, timezone
-from services.ai.message_generator import generate_outreach_message
+from services.messaging.message_generator import generate_outreach_message
 from db.neo4j_client import db
 from api.routes.auth import get_current_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
+class PersonInfo(BaseModel):
+    name: str = Field(..., max_length=200)
+    title: str = Field("", max_length=500)
+    degree: int = Field(1, ge=1, le=3)
+    is_recruiter: bool = False
+
+
 class MessageRequest(BaseModel):
-    target_person: dict
-    target_company: str
-    bridge_person: dict | None = None
+    target_person: PersonInfo
+    target_company: str = Field(..., max_length=200)
+    bridge_person: PersonInfo | None = None
 
 
 class MessageLogRequest(BaseModel):
@@ -27,7 +37,7 @@ class LinkedInVisitRequest(BaseModel):
 
 
 class ActiveTimeRequest(BaseModel):
-    seconds: int
+    seconds: int = Field(..., ge=0, le=3600)
 
 
 @router.post("/generate")
@@ -52,8 +62,9 @@ async def generate_message(
             context={"bridge_person": req.bridge_person}
         )
         return {"message": message}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error generating outreach message")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/log")
@@ -82,8 +93,9 @@ async def log_message(
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error logging message")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/stats")
@@ -129,8 +141,9 @@ async def log_linkedin_visit(
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error logging LinkedIn visit")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/visit-stats")
@@ -225,5 +238,6 @@ async def update_active_time(
             now=datetime.now(timezone.utc).isoformat(),
         )
         return {"success": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error updating active time")
+        raise HTTPException(status_code=500, detail="Internal server error")

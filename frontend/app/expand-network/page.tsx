@@ -1,10 +1,9 @@
 "use client"
 import { useEffect, useState } from "react"
-import axios from "axios"
-import { Upload, Users, Network, FileText, CheckCircle2, Loader2, AlertCircle } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Upload, Users, FileText, CheckCircle2, Loader2, AlertCircle } from "lucide-react"
 import Sidebar from "@/components/Sidebar"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL
+import { useAuth, useAuthenticatedAxios } from "@/components/AuthContext"
 
 type NetworkInfo = {
   id: string
@@ -16,6 +15,9 @@ type NetworkInfo = {
 }
 
 export default function ExpandNetworkPage() {
+  const router = useRouter()
+  const { isAuthenticated, isLoading: authLoading } = useAuth()
+  const getAuthAxios = useAuthenticatedAxios()
   const [file, setFile] = useState<File | null>(null)
   const [sourceName, setSourceName] = useState("")
   const [sourceEmail, setSourceEmail] = useState("")
@@ -25,18 +27,22 @@ export default function ExpandNetworkPage() {
   const [result, setResult] = useState<any>(null)
   const [networks, setNetworks] = useState<NetworkInfo[]>([])
   const [loadingNetworks, setLoadingNetworks] = useState(true)
+  const [errorMessage, setErrorMessage] = useState("")
 
   useEffect(() => {
-    const ownerId = localStorage.getItem("user_id")
-    if (!ownerId) {
-      setLoadingNetworks(false)
+    if (authLoading) {
       return
     }
+
+    if (!isAuthenticated) {
+      router.push("/login")
+      return
+    }
+
     const loadNetworks = async () => {
       try {
-        const res = await axios.get(`${API_URL}/api/graph/networks`, {
-          params: { owner_user_id: ownerId },
-        })
+        const axios = await getAuthAxios()
+        const res = await axios.get("/api/graph/networks")
         setNetworks(res.data.networks || [])
       } catch (e) {
         console.error("Failed to load networks", e)
@@ -45,30 +51,31 @@ export default function ExpandNetworkPage() {
       }
     }
     loadNetworks()
-  }, [])
+  }, [authLoading, isAuthenticated, router, getAuthAxios])
 
   const handleUpload = async () => {
     if (!file || !sourceName) return
-    const ownerId = localStorage.getItem("user_id") || ""
-    if (!ownerId) {
-      alert("Please upload your own Connections.csv first so we can attach additional networks to your profile.")
+
+    if (!isAuthenticated) {
+      router.push("/login")
       return
     }
 
     setStatus("loading")
+    setErrorMessage("")
     const formData = new FormData()
     formData.append("file", file)
 
     try {
+      const axios = await getAuthAxios()
       const params = new URLSearchParams()
-      params.set("owner_user_id", ownerId)
       params.set("source_name", sourceName)
       if (sourceTitle) params.set("source_title", sourceTitle)
       if (sourceEmail) params.set("source_email", sourceEmail)
       if (networkName) params.set("network_name", networkName)
 
       const res = await axios.post(
-        `${API_URL}/api/upload/network?${params.toString()}`,
+        `/api/upload/network?${params.toString()}`,
         formData,
         { headers: { "Content-Type": "multipart/form-data" } },
       )
@@ -77,21 +84,28 @@ export default function ExpandNetworkPage() {
       setFile(null)
 
       // Refresh networks list
-      const nets = await axios.get(`${API_URL}/api/graph/networks`, {
-        params: { owner_user_id: ownerId },
-      })
+      const nets = await axios.get("/api/graph/networks")
       setNetworks(nets.data.networks || [])
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to upload additional network", e)
+      setErrorMessage(e.response?.data?.detail || "Something went wrong while adding this network. Please try again.")
       setStatus("error")
     }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="flex h-screen bg-dark-bg items-center justify-center">
+        <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+      </div>
+    )
   }
 
   return (
     <div className="flex h-screen bg-dark-bg overflow-hidden">
       <Sidebar />
 
-      <main className="flex-1 p-6 overflow-auto">
+      <main className="flex-1 p-6 pb-20 md:pb-6 overflow-auto">
         <div className="max-w-5xl mx-auto space-y-8">
           <div className="flex items-center justify-between">
             <div>
@@ -219,7 +233,7 @@ export default function ExpandNetworkPage() {
                 {status === "error" && (
                   <div className="mt-4 flex items-center gap-3 text-sm text-accent-rose">
                     <AlertCircle className="w-5 h-5" />
-                    <span>Something went wrong while adding this network. Please try again.</span>
+                    <span>{errorMessage || "Something went wrong while adding this network. Please try again."}</span>
                   </div>
                 )}
               </div>

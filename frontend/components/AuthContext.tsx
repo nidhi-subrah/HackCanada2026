@@ -1,7 +1,7 @@
 "use client"
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import axios from "axios"
+import axios, { AxiosError, InternalAxiosRequestConfig } from "axios"
 
 interface User {
   id: string
@@ -15,9 +15,8 @@ interface AuthContextType {
   token: string | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (accessToken: string, refreshToken: string, user: User) => void
   logout: () => void
-  getAccessToken: () => Promise<string | null>
+  refreshSession: () => Promise<User | null>
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -25,139 +24,90 @@ const AuthContext = createContext<AuthContextType>({
   token: null,
   isAuthenticated: false,
   isLoading: true,
-  login: () => {},
   logout: () => {},
-  getAccessToken: async () => null,
+  refreshSession: async () => null,
 })
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL
+// Empty string → relative URLs → Vercel rewrite proxies to Railway.
+// This keeps cookies same-origin on networkify.live.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || ""
 
-function parseJwt(token: string): { exp: number } | null {
-  try {
-    const base64Url = token.split('.')[1]
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    )
-    return JSON.parse(jsonPayload)
-  } catch {
-    return null
-  }
+function clearStoredUser() {
+  localStorage.removeItem("auth_user")
+  localStorage.removeItem("user_id")
+  localStorage.removeItem("user_name")
+  localStorage.removeItem("access_token")
+  localStorage.removeItem("refresh_token")
+  localStorage.removeItem("user")
 }
 
-function isTokenExpired(token: string, bufferSeconds = 60): boolean {
-  const payload = parseJwt(token)
-  if (!payload || !payload.exp) return true
-  const now = Math.floor(Date.now() / 1000)
-  return payload.exp < now + bufferSeconds
+async function fetchCurrentUser(): Promise<User | null> {
+  const res = await axios.get(`${API_URL}/auth/me`, { withCredentials: true })
+  return res.data
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
-  const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const refreshPromiseRef = useRef<Promise<string | null> | null>(null)
-
-  useEffect(() => {
-    const storedToken = localStorage.getItem("access_token")
-    const storedUser = localStorage.getItem("auth_user")
-
-    if (storedToken && storedUser) {
-      try {
-        setToken(storedToken)
-        setUser(JSON.parse(storedUser))
-      } catch {
-        localStorage.removeItem("access_token")
-        localStorage.removeItem("refresh_token")
-        localStorage.removeItem("auth_user")
-      }
-    }
-    setIsLoading(false)
-  }, [])
-
-  const login = useCallback((accessToken: string, refreshToken: string, newUser: User) => {
-    localStorage.setItem("access_token", accessToken)
-    localStorage.setItem("refresh_token", refreshToken)
-    localStorage.setItem("auth_user", JSON.stringify(newUser))
-    if (newUser.id) {
-      localStorage.setItem("user_id", newUser.id)
-      localStorage.setItem("user_name", newUser.name)
-    }
-    setToken(accessToken)
-    setUser(newUser)
-  }, [])
 
   const logout = useCallback(() => {
-    localStorage.removeItem("access_token")
-    localStorage.removeItem("refresh_token")
-    localStorage.removeItem("auth_user")
-    localStorage.removeItem("user_id")
-    localStorage.removeItem("user_name")
-    setToken(null)
+    void axios.post(`${API_URL}/auth/logout`, {}, { withCredentials: true }).catch(() => undefined)
+    clearStoredUser()
     setUser(null)
     router.push("/login")
   }, [router])
 
-  const refreshAccessToken = useCallback(async (): Promise<string | null> => {
-    const refreshToken = localStorage.getItem("refresh_token")
-    if (!refreshToken) {
-      logout()
-      return null
-    }
-
+  const refreshSession = useCallback(async (): Promise<User | null> => {
     try {
-      const res = await axios.post(`${API_URL}/auth/refresh`, {
-        refresh_token: refreshToken
-      })
-
-      const { access_token, refresh_token: newRefreshToken } = res.data
-      localStorage.setItem("access_token", access_token)
-      localStorage.setItem("refresh_token", newRefreshToken)
-      setToken(access_token)
-      return access_token
+      const currentUser = await fetchCurrentUser()
+      if (currentUser) {
+        setUser(currentUser)
+        return currentUser
+      }
     } catch (error) {
-      console.error("Token refresh failed:", error)
-      logout()
-      return null
-    }
-  }, [logout])
-
-  const getAccessToken = useCallback(async (): Promise<string | null> => {
-    const currentToken = localStorage.getItem("access_token")
-    
-    if (!currentToken) {
-      return null
-    }
-
-    if (!isTokenExpired(currentToken)) {
-      return currentToken
-    }
-
-    if (refreshPromiseRef.current) {
-      return refreshPromiseRef.current
+      const axiosError = error as AxiosError
+      if (axiosError.response?.status === 401) {
+        try {
+          await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true })
+          const refreshedUser = await fetchCurrentUser()
+          if (refreshedUser) {
+            setUser(refreshedUser)
+            return refreshedUser
+          }
+        } catch {
+          clearStoredUser()
+          setUser(null)
+          return null
+        }
+      } else {
+        return null
+      }
     }
 
-    refreshPromiseRef.current = refreshAccessToken().finally(() => {
-      refreshPromiseRef.current = null
+    clearStoredUser()
+    setUser(null)
+    return null
+  }, [])
+
+  useEffect(() => {
+    clearStoredUser()
+    void refreshSession().finally(() => {
+      setIsLoading(false)
     })
-
-    return refreshPromiseRef.current
-  }, [refreshAccessToken])
+  }, [refreshSession])
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      token, 
-      isAuthenticated: !!token, 
-      isLoading,
-      login, 
-      logout,
-      getAccessToken 
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token: null,
+        isAuthenticated: !!user,
+        isLoading,
+        logout,
+        refreshSession,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
@@ -168,28 +118,36 @@ export function useAuth() {
 }
 
 export function useAuthenticatedAxios() {
-  const { getAccessToken, logout } = useAuth()
+  const { logout, refreshSession } = useAuth()
 
   const authAxios = useCallback(async () => {
-    const token = await getAccessToken()
-    
     const instance = axios.create({
       baseURL: API_URL,
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
+      withCredentials: true,
     })
 
     instance.interceptors.response.use(
       (response) => response,
-      async (error) => {
-        if (error.response?.status === 401) {
-          logout()
+      async (error: AxiosError) => {
+        const originalRequest = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined
+
+        if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+          originalRequest._retry = true
+          try {
+            await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true })
+            await refreshSession()
+            return instance(originalRequest)
+          } catch {
+            logout()
+          }
         }
+
         return Promise.reject(error)
       }
     )
 
     return instance
-  }, [getAccessToken, logout])
+  }, [logout, refreshSession])
 
   return authAxios
 }

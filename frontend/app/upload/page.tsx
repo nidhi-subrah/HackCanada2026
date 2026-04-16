@@ -105,8 +105,8 @@ export default function UploadPage() {
     <div className="flex h-screen bg-dark-bg overflow-hidden">
       <Sidebar />
 
-      <main className="flex-1 flex flex-col items-center justify-center p-6 bg-[#0a0a12]">
-        <div className="w-full max-w-lg mb-8 animate-fade-in">
+      <main className="flex-1 flex flex-col items-center p-6 pb-20 md:pb-6 overflow-auto bg-[#0a0a12]">
+        <div className="w-full max-w-lg mt-6 mb-8 animate-fade-in">
           <div className="text-center">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-accent-cyan flex items-center justify-center mx-auto mb-6 shadow-glow">
               <Upload className="w-8 h-8 text-white" />
@@ -294,18 +294,31 @@ export default function UploadPage() {
         </div>
         )}
 
-          <div className="mt-8 p-4 rounded-xl bg-dark-surface/50 border border-dark-glassBorder">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-accent-amber mt-0.5 flex-shrink-0" />
-              <div className="text-sm">
-                <p className="text-zinc-300 font-medium mb-1">How to get your LinkedIn data</p>
-                <p className="text-zinc-500">
-                  Go to LinkedIn → Settings → Data Privacy → Get a copy of your data → 
-                  Select &quot;Connections&quot; → Download when ready
-                </p>
-              </div>
-            </div>
-          </div>
+        </div>
+
+        {/* Tutorial */}
+        <div className="w-full max-w-lg mt-6 mb-6 glass-card p-6">
+          <h2 className="text-base font-semibold text-white mb-4">How to export your LinkedIn connections</h2>
+
+          <video
+            className="w-full aspect-video rounded-xl mb-5 object-cover"
+            src="/EditedTutorial.mp4"
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+
+          <ol className="space-y-3 text-sm text-zinc-400 list-decimal list-inside">
+            <li>Open <span className="text-zinc-200">LinkedIn</span> and go to <span className="text-zinc-200">Settings &amp; Privacy</span>.</li>
+            <li>Click <span className="text-zinc-200">Data Privacy</span> in the left menu.</li>
+            <li>Select <span className="text-zinc-200">Get a copy of your data</span>.</li>
+            <li>Choose <span className="text-zinc-200">Connections</span> (you don&apos;t need the full archive).</li>
+            <li>Click <span className="text-zinc-200">Request archive</span> — LinkedIn will email you a download link. <span className="text-accent-amber">This can take up to 10 minutes, so come back once you receive the email.</span></li>
+            <li>Download the ZIP, open it, and locate <span className="text-zinc-200">Connections.csv</span>.</li>
+            <li>Upload that file above.</li>
+          </ol>
+
         </div>
       </main>
     </div>
